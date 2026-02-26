@@ -296,6 +296,7 @@ func ServerLogic(kmsRequest *KMSRequest, config *ServerConfig) *KMSResponse {
 	log.Printf("Client Machine ID: %s", kmsRequest.ClientMachineID)
 	log.Printf("Application ID: %s", kmsRequest.ApplicationID)
 	log.Printf("SKU ID: %s", kmsRequest.SKUID)
+	log.Printf("KMS Counted ID: %s", kmsRequest.KMSCountedID)
 	log.Printf("License Status: %s", LicenseStates[kmsRequest.LicenseStatus])
 	log.Printf("Request Time: %s", FileTimeToTime(int64(kmsRequest.RequestTime)))
 
