@@ -50,7 +50,6 @@ func runServer(args []string) {
 	activation := fs.Int("activation", 120, "Activation interval in minutes")
 	renewal := fs.Int("renewal", 10080, "Renewal interval in minutes")
 	hwid := fs.String("hwid", "364F463A8863D35F", "Hardware ID (16 hex chars)")
-	dbPath := fs.String("db", "", "Path to KmsDataBase.xml")
 
 	fs.Parse(args)
 
@@ -77,11 +76,6 @@ func runServer(args []string) {
 			log.Fatalf("Invalid HWID: %s (must be 16 hex characters)", *hwid)
 		}
 		config.HWID = hwidBytes
-	}
-
-	// Set KMS database path.
-	if *dbPath != "" {
-		kms.SetKmsDBPath(*dbPath)
 	}
 
 	srv := server.NewKMSServer(config)

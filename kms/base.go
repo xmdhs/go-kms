@@ -2,14 +2,13 @@ package kms
 
 import (
 	"bytes"
+	_ "embed"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/xml"
 	"fmt"
 	"log"
 	"math/rand"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -395,9 +394,9 @@ func GenerateKMSResponseData(data []byte, config *ServerConfig) ([]byte, error) 
 // --- KMS Database XML Parsing ---
 
 type KmsDataBase struct {
-	WinBuilds []WinBuild
+	WinBuilds  []WinBuild
 	CsvlkItems []CsvlkItem
-	AppItems  []AppItem
+	AppItems   []AppItem
 }
 
 type WinBuild struct {
@@ -436,10 +435,10 @@ type SkuItem struct {
 
 // XML structures for parsing.
 type xmlRoot struct {
-	XMLName   xml.Name      `xml:"KmsData"`
-	WinBuilds []xmlWinBuild `xml:"WinBuild"`
-	CsvlkItems []xmlCsvlk   `xml:"CsvlkItem"`
-	AppItems  []xmlApp      `xml:"AppItem"`
+	XMLName    xml.Name      `xml:"KmsData"`
+	WinBuilds  []xmlWinBuild `xml:"WinBuild"`
+	CsvlkItems []xmlCsvlk    `xml:"CsvlkItem"`
+	AppItems   []xmlApp      `xml:"AppItem"`
 }
 
 type xmlWinBuild struct {
@@ -480,25 +479,11 @@ type xmlSkuItem struct {
 	DisplayName string `xml:"DisplayName,attr"`
 }
 
-var kmsDBPath string
-
-func SetKmsDBPath(path string) {
-	kmsDBPath = path
-}
+//go:embed KmsDataBase.xml
+var kmsDataBaseFile []byte
 
 func LoadKmsDB() (*KmsDataBase, error) {
-	path := kmsDBPath
-	if path == "" {
-		exe, err := os.Executable()
-		if err == nil {
-			path = filepath.Join(filepath.Dir(exe), "KmsDataBase.xml")
-		}
-	}
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read KmsDataBase.xml: %w", err)
-	}
+	data := kmsDataBaseFile
 
 	var root xmlRoot
 	if err := xml.Unmarshal(data, &root); err != nil {

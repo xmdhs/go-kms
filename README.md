@@ -1,44 +1,44 @@
 # go-kms
 
-KMS 服务器/客户端模拟器，Go 语言实现。
+KMS server/client simulator implemented in Go.
 
-## 用法
+## Usage
 
-### 启动服务器
+### Start Server
 
 ```bash
 go-kms server -ip 0.0.0.0 -port 1688
 ```
 
-### 运行客户端
+### Run Client
 
 ```bash
 go-kms client -ip 127.0.0.1 -port 1688
 ```
 
-## 参数
+## Options
 
-### 服务器参数
+### Server Options
 
-| 参数 | 默认值 | 说明 |
-|------|--------|------|
-| `-ip` | 0.0.0.0 | 监听地址 |
-| `-port` | 1688 | 监听端口 |
-| `-epid` | 自动生成 | ePID |
-| `-count` | 0 | 客户端数量（0=自动） |
-| `-hwid` | 364F463A8863D35F | 硬件 ID |
-| `-db` | - | KmsDataBase.xml 路径 |
+| Option | Default | Description |
+|--------|---------|-------------|
+| `-ip` | 0.0.0.0 | Listen address |
+| `-port` | 1688 | Listen port |
+| `-epid` | Auto-generated | ePID |
+| `-count` | 0 | Client count (0=auto) |
+| `-hwid` | 364F463A8863D35F | Hardware ID |
+| `-db` | - | Path to KmsDataBase.xml |
 
-### 客户端参数
+### Client Options
 
-| 参数 | 默认值 | 说明 |
-|------|--------|------|
-| `-ip` | 127.0.0.1 | 服务器地址 |
-| `-port` | 1688 | 服务器端口 |
-| `-mode` | Windows8.1 | 产品模式 |
-| `-name` | 自动生成 | 机器名 |
+| Option | Default | Description |
+|--------|---------|-------------|
+| `-ip` | 127.0.0.1 | Server address |
+| `-port` | 1688 | Server port |
+| `-mode` | Windows8.1 | Product mode |
+| `-name` | Auto-generated | Machine name |
 
-## 构建
+## Build
 
 ```bash
 go build -o go-kms.exe
