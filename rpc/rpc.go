@@ -1,0 +1,431 @@
+package rpc
+
+import (
+	"bytes"
+	"encoding/binary"
+	"fmt"
+)
+
+// MS-RPC packet type constants.
+const (
+	PacketTypeRequest       = 0x00
+	PacketTypePing          = 0x01
+	PacketTypeResponse      = 0x02
+	PacketTypeFault         = 0x03
+	PacketTypeWorking       = 0x04
+	PacketTypeNoCall        = 0x05
+	PacketTypeReject        = 0x06
+	PacketTypeAck           = 0x07
+	PacketTypeCLCancel      = 0x08
+	PacketTypeFAck          = 0x09
+	PacketTypeCancelAck     = 0x0A
+	PacketTypeBind          = 0x0B
+	PacketTypeBindAck       = 0x0C
+	PacketTypeBindNak       = 0x0D
+	PacketTypeAlterContext   = 0x0E
+	PacketTypeAlterContextR = 0x0F
+	PacketTypeAuth3         = 0x10
+	PacketTypeShutdown      = 0x11
+	PacketTypeCOCancel      = 0x12
+	PacketTypeOrphaned      = 0x13
+)
+
+// MS-RPC packet flags.
+const (
+	FlagFirstFrag    = 0x01
+	FlagLastFrag     = 0x02
+	FlagSupportSign  = 0x04
+	FlagPendCancel   = 0x04
+	FlagReserved     = 0x08
+	FlagConcMpx      = 0x10
+	FlagDidNotExec   = 0x20
+	FlagMaybe        = 0x40
+	FlagObjectUUID   = 0x80
+)
+
+// Context result codes.
+const (
+	ContResultAccept     = 0
+	ContResultUserReject = 1
+	ContResultProvReject = 2
+)
+
+// MSRPCHeader is the common header for all MS-RPC PDUs (16 bytes).
+type MSRPCHeader struct {
+	VerMajor       uint8
+	VerMinor       uint8
+	Type           uint8
+	Flags          uint8
+	Representation uint32
+	FragLen        uint16
+	AuthLen        uint16
+	CallID         uint32
+}
+
+const MSRPCHeaderSize = 16
+
+func ParseMSRPCHeader(data []byte) (*MSRPCHeader, error) {
+	if len(data) < MSRPCHeaderSize {
+		return nil, fmt.Errorf("data too short for RPC header: %d", len(data))
+	}
+	h := &MSRPCHeader{}
+	buf := bytes.NewReader(data)
+	if err := binary.Read(buf, binary.LittleEndian, h); err != nil {
+		return nil, err
+	}
+	return h, nil
+}
+
+func (h *MSRPCHeader) Marshal() []byte {
+	var buf bytes.Buffer
+	binary.Write(&buf, binary.LittleEndian, h)
+	return buf.Bytes()
+}
+
+// PDUData extracts the PDU data from a complete RPC packet.
+func PDUData(data []byte) []byte {
+	if len(data) <= MSRPCHeaderSize {
+		return nil
+	}
+	header, err := ParseMSRPCHeader(data)
+	if err != nil {
+		return nil
+	}
+	end := int(header.FragLen) - int(header.AuthLen)
+	if header.AuthLen > 0 {
+		end -= 8 // sec_trailer
+	}
+	if end > len(data) {
+		end = len(data)
+	}
+	return data[MSRPCHeaderSize:end]
+}
+
+// MSRPCRequestHeader extends MSRPCHeader with request-specific fields.
+type MSRPCRequestHeader struct {
+	MSRPCHeader
+	AllocHint uint32
+	CtxID     uint16
+	OpNum     uint16
+}
+
+const MSRPCRequestHeaderSize = 24
+
+func ParseMSRPCRequestHeader(data []byte) (*MSRPCRequestHeader, error) {
+	if len(data) < MSRPCRequestHeaderSize {
+		return nil, fmt.Errorf("data too short for RPC request header: %d", len(data))
+	}
+	h := &MSRPCRequestHeader{}
+	buf := bytes.NewReader(data)
+	if err := binary.Read(buf, binary.LittleEndian, h); err != nil {
+		return nil, err
+	}
+	return h, nil
+}
+
+func (h *MSRPCRequestHeader) PDUData(fullPacket []byte) []byte {
+	if len(fullPacket) <= MSRPCRequestHeaderSize {
+		return nil
+	}
+	// Check for object UUID.
+	offset := MSRPCRequestHeaderSize
+	if h.Flags&FlagObjectUUID > 0 {
+		offset += 16
+	}
+	end := int(h.FragLen) - int(h.AuthLen)
+	if h.AuthLen > 0 {
+		end -= 8
+	}
+	if end > len(fullPacket) {
+		end = len(fullPacket)
+	}
+	if offset >= end {
+		return nil
+	}
+	return fullPacket[offset:end]
+}
+
+// MSRPCRespHeader extends MSRPCHeader with response-specific fields.
+type MSRPCRespHeader struct {
+	MSRPCHeader
+	AllocHint   uint32
+	CtxID       uint16
+	CancelCount uint8
+	Padding     uint8
+}
+
+const MSRPCRespHeaderSize = 24
+
+func BuildMSRPCResponse(reqHeader *MSRPCRequestHeader, pduData []byte) []byte {
+	resp := MSRPCRespHeader{
+		MSRPCHeader: MSRPCHeader{
+			VerMajor:       reqHeader.VerMajor,
+			VerMinor:       reqHeader.VerMinor,
+			Type:           PacketTypeResponse,
+			Flags:          FlagFirstFrag | FlagLastFrag,
+			Representation: reqHeader.Representation,
+			FragLen:        uint16(MSRPCRespHeaderSize + len(pduData)),
+			AuthLen:        0,
+			CallID:         reqHeader.CallID,
+		},
+		AllocHint:   uint32(len(pduData)),
+		CtxID:       reqHeader.CtxID,
+		CancelCount: 0,
+		Padding:     0,
+	}
+
+	var buf bytes.Buffer
+	binary.Write(&buf, binary.LittleEndian, &resp)
+	buf.Write(pduData)
+	return buf.Bytes()
+}
+
+// BindRequest represents an RPC BIND request body.
+type BindRequest struct {
+	MaxTFrag   uint16
+	MaxRFrag   uint16
+	AssocGroup uint32
+	CtxNum     uint8
+	Reserved   uint8
+	Reserved2  uint16
+	CtxItems   []CtxItem
+}
+
+// CtxItem represents a context item in a BIND request.
+type CtxItem struct {
+	ContextID          uint16
+	TransItems         uint8
+	Pad                uint8
+	AbstractSyntaxUUID [16]byte
+	AbstractSyntaxVer  uint32
+	TransferSyntaxUUID [16]byte
+	TransferSyntaxVer  uint32
+}
+
+const CtxItemSize = 44
+
+func ParseBindRequest(data []byte) (*BindRequest, error) {
+	if len(data) < 8 {
+		return nil, fmt.Errorf("data too short for BIND request")
+	}
+	b := &BindRequest{}
+	buf := bytes.NewReader(data)
+	if err := binary.Read(buf, binary.LittleEndian, &b.MaxTFrag); err != nil {
+		return nil, err
+	}
+	if err := binary.Read(buf, binary.LittleEndian, &b.MaxRFrag); err != nil {
+		return nil, err
+	}
+	if err := binary.Read(buf, binary.LittleEndian, &b.AssocGroup); err != nil {
+		return nil, err
+	}
+	if err := binary.Read(buf, binary.LittleEndian, &b.CtxNum); err != nil {
+		return nil, err
+	}
+	if err := binary.Read(buf, binary.LittleEndian, &b.Reserved); err != nil {
+		return nil, err
+	}
+	if err := binary.Read(buf, binary.LittleEndian, &b.Reserved2); err != nil {
+		return nil, err
+	}
+
+	for i := 0; i < int(b.CtxNum); i++ {
+		var item CtxItem
+		if err := binary.Read(buf, binary.LittleEndian, &item); err != nil {
+			return nil, err
+		}
+		b.CtxItems = append(b.CtxItems, item)
+	}
+
+	return b, nil
+}
+
+// CtxItemResult represents a context item result in a BIND ACK.
+type CtxItemResult struct {
+	Result             uint16
+	Reason             uint16
+	TransferSyntaxUUID [16]byte
+	TransferSyntaxVer  uint32
+}
+
+const CtxItemResultSize = 24
+
+// Well-known UUIDs.
+var (
+	UUIDNDR32 = [16]byte{0x04, 0x5d, 0x88, 0x8a, 0xeb, 0x1c, 0xc9, 0x11, 0x9f, 0xe8, 0x08, 0x00, 0x2b, 0x10, 0x48, 0x60}
+	UUIDNDR64 = [16]byte{0x33, 0x05, 0x71, 0x71, 0xba, 0xbe, 0x37, 0x49, 0x83, 0x19, 0xb5, 0xdb, 0xef, 0x9c, 0xcc, 0x36}
+	UUIDTime  = [16]byte{0x2c, 0x1c, 0xb7, 0x6c, 0x12, 0x98, 0x40, 0x45, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
+	UUIDEmpty = [16]byte{}
+)
+
+// BuildBindAckResponse creates a BIND ACK response.
+func BuildBindAckResponse(reqData []byte, port int, callID uint32) ([]byte, error) {
+	header, err := ParseMSRPCHeader(reqData)
+	if err != nil {
+		return nil, err
+	}
+
+	bind, err := ParseBindRequest(PDUData(reqData))
+	if err != nil {
+		return nil, err
+	}
+
+	portStr := fmt.Sprintf("%d", port)
+	secondaryAddrLen := uint16(len(portStr) + 1)
+
+	// Calculate padding.
+	pad := (4 - ((int(secondaryAddrLen) + 26) % 4)) % 4
+
+	// Build ctx item results.
+	var ctxResults []byte
+	for i := 0; i < int(bind.CtxNum); i++ {
+		tsUUID := bind.CtxItems[i].TransferSyntaxUUID
+		var result CtxItemResult
+		if tsUUID == UUIDNDR32 {
+			result = CtxItemResult{
+				Result:             ContResultAccept,
+				Reason:             0,
+				TransferSyntaxUUID: UUIDNDR32,
+				TransferSyntaxVer:  2,
+			}
+		} else if tsUUID == UUIDTime {
+			result = CtxItemResult{
+				Result:             3,
+				Reason:             3,
+				TransferSyntaxUUID: UUIDEmpty,
+				TransferSyntaxVer:  0,
+			}
+		} else {
+			result = CtxItemResult{
+				Result:             ContResultProvReject,
+				Reason:             ContResultProvReject,
+				TransferSyntaxUUID: UUIDEmpty,
+				TransferSyntaxVer:  0,
+			}
+		}
+		var rbuf bytes.Buffer
+		binary.Write(&rbuf, binary.LittleEndian, &result)
+		ctxResults = append(ctxResults, rbuf.Bytes()...)
+	}
+
+	// Calculate total fragment length.
+	fragLen := 26 + int(secondaryAddrLen) + pad + 4 + len(ctxResults)
+
+	// Build the response.
+	var buf bytes.Buffer
+
+	// Common header.
+	respHeader := MSRPCHeader{
+		VerMajor:       header.VerMajor,
+		VerMinor:       header.VerMinor,
+		Type:           PacketTypeBindAck,
+		Flags:          FlagFirstFrag | FlagLastFrag | FlagConcMpx,
+		Representation: header.Representation,
+		FragLen:        uint16(fragLen),
+		AuthLen:        header.AuthLen,
+		CallID:         callID,
+	}
+	binary.Write(&buf, binary.LittleEndian, &respHeader)
+
+	// Bind ACK specific fields.
+	binary.Write(&buf, binary.LittleEndian, bind.MaxTFrag)
+	binary.Write(&buf, binary.LittleEndian, bind.MaxRFrag)
+	binary.Write(&buf, binary.LittleEndian, uint32(0x1063bf3f)) // assoc_group
+
+	// Secondary address.
+	binary.Write(&buf, binary.LittleEndian, secondaryAddrLen)
+	buf.Write([]byte(portStr))
+	buf.WriteByte(0) // null terminator
+
+	// Padding.
+	for i := 0; i < pad; i++ {
+		buf.WriteByte(0)
+	}
+
+	// Context results.
+	buf.WriteByte(bind.CtxNum)  // ctx_num
+	buf.WriteByte(0)            // Reserved
+	binary.Write(&buf, binary.LittleEndian, uint16(0)) // Reserved2
+	buf.Write(ctxResults)
+
+	return buf.Bytes(), nil
+}
+
+// BuildBindRequest creates a BIND request for the client.
+func BuildBindRequest(callID uint32) []byte {
+	kmsUUID := [16]byte{0x75, 0x21, 0xc8, 0x51, 0x4e, 0x84, 0x50, 0x47, 0xb0, 0xd8, 0xec, 0x25, 0x55, 0x55, 0xbc, 0x06}
+
+	firstCtx := CtxItem{
+		ContextID:          0,
+		TransItems:         1,
+		Pad:                0,
+		AbstractSyntaxUUID: kmsUUID,
+		AbstractSyntaxVer:  1,
+		TransferSyntaxUUID: UUIDNDR32,
+		TransferSyntaxVer:  2,
+	}
+
+	secondCtx := CtxItem{
+		ContextID:          1,
+		TransItems:         1,
+		Pad:                0,
+		AbstractSyntaxUUID: kmsUUID,
+		AbstractSyntaxVer:  1,
+		TransferSyntaxUUID: UUIDTime,
+		TransferSyntaxVer:  1,
+	}
+
+	// Build bind body.
+	var bindBody bytes.Buffer
+	binary.Write(&bindBody, binary.LittleEndian, uint16(5840)) // max_tfrag
+	binary.Write(&bindBody, binary.LittleEndian, uint16(5840)) // max_rfrag
+	binary.Write(&bindBody, binary.LittleEndian, uint32(0))    // assoc_group
+	bindBody.WriteByte(2)                                       // ctx_num
+	bindBody.WriteByte(0)                                       // Reserved
+	binary.Write(&bindBody, binary.LittleEndian, uint16(0))    // Reserved2
+	binary.Write(&bindBody, binary.LittleEndian, &firstCtx)
+	binary.Write(&bindBody, binary.LittleEndian, &secondCtx)
+
+	pduData := bindBody.Bytes()
+
+	// Build full packet.
+	header := MSRPCHeader{
+		VerMajor:       5,
+		VerMinor:       0,
+		Type:           PacketTypeBind,
+		Flags:          FlagFirstFrag | FlagLastFrag | FlagConcMpx,
+		Representation: 0x10,
+		FragLen:        uint16(MSRPCHeaderSize + len(pduData)),
+		AuthLen:        0,
+		CallID:         callID,
+	}
+
+	var buf bytes.Buffer
+	binary.Write(&buf, binary.LittleEndian, &header)
+	buf.Write(pduData)
+	return buf.Bytes()
+}
+
+// BuildRPCRequest creates an RPC REQUEST packet wrapping the given KMS data.
+func BuildRPCRequest(kmsData []byte, callID uint32) []byte {
+	header := MSRPCRequestHeader{
+		MSRPCHeader: MSRPCHeader{
+			VerMajor:       5,
+			VerMinor:       0,
+			Type:           PacketTypeRequest,
+			Flags:          FlagFirstFrag | FlagLastFrag,
+			Representation: 0x10,
+			FragLen:        uint16(MSRPCRequestHeaderSize + len(kmsData)),
+			AuthLen:        0,
+			CallID:         callID,
+		},
+		AllocHint: uint32(len(kmsData)),
+		CtxID:     0,
+		OpNum:     0,
+	}
+
+	var buf bytes.Buffer
+	binary.Write(&buf, binary.LittleEndian, &header)
+	buf.Write(kmsData)
+	return buf.Bytes()
+}
