@@ -388,14 +388,19 @@ func parseV5V6Response(data []byte, isV6 bool) error {
 
 	printResponse(resp)
 
+	// Wire format response size: VersionMinor(2) + VersionMajor(2) + EPIDLen(4) + Epid(EPIDLen) + ClientMachineID(16) + ResponseTime(8) + CurrentClientCount(4) + VLActivationInterval(4) + VLRenewalInterval(4)
+	respLen := 44 + int(resp.EPIDLen)
+
 	if isV6 {
 		// V6 has additional fields after the response: keys(16) + hash(32) + hwid(8) + xorSalts(16) + hmac(16)
-		log.Printf("V6 HMAC verification skipped (CTF mode)")
+		hwidOffset := respLen + 16 + 32 // keys(16) + hash(32)
+		if len(decrypted) >= hwidOffset+8 {
+			hwid := decrypted[hwidOffset : hwidOffset+8]
+			log.Printf("  HWID: %X", hwid)
+		}
 	} else {
 		// V5 has additional fields: keys(16) + hash(32)
 		// Verify hash.
-		respBytes := resp.Marshal()
-		respLen := len(respBytes)
 		if len(decrypted) > respLen+16 {
 			randomKeys := decrypted[respLen : respLen+16]
 			hashInResp := decrypted[respLen+16 : respLen+48]
