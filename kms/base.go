@@ -83,13 +83,17 @@ type KMSRequest struct {
 }
 
 func (r *KMSRequest) MachineName() string {
-	u16s := make([]uint16, len(r.MachineNameRaw)/2)
-	for i := range u16s {
-		u16s[i] = binary.LittleEndian.Uint16(r.MachineNameRaw[i*2:])
+	raw := r.MachineNameRaw
+	for i := 0; i < len(raw)-1; i += 2 {
+		if raw[i] == 0 && raw[i+1] == 0 {
+			raw = raw[:i]
+			break
+		}
 	}
-	// Trim null terminators.
-	for len(u16s) > 0 && u16s[len(u16s)-1] == 0 {
-		u16s = u16s[:len(u16s)-1]
+	// Decode UTF-16LE.
+	u16s := make([]uint16, len(raw)/2)
+	for i := range u16s {
+		u16s[i] = binary.LittleEndian.Uint16(raw[i*2:])
 	}
 	return string(utf16.Decode(u16s))
 }
