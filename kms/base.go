@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -100,53 +101,42 @@ func (r *KMSRequest) MachineName() string {
 }
 
 func ParseKMSRequest(data []byte) (*KMSRequest, error) {
+	const fixedSize = 108 // 2+2+4+4+4+16+16+16+16+4+8+16
+	if len(data) < fixedSize {
+		return nil, fmt.Errorf("KMS request data too short: %d", len(data))
+	}
+
+	offset := 0
 	r := &KMSRequest{}
-	buf := bytes.NewReader(data)
+	r.VersionMinor = binary.LittleEndian.Uint16(data[offset : offset+2])
+	offset += 2
+	r.VersionMajor = binary.LittleEndian.Uint16(data[offset : offset+2])
+	offset += 2
+	r.IsClientVM = binary.LittleEndian.Uint32(data[offset : offset+4])
+	offset += 4
+	r.LicenseStatus = binary.LittleEndian.Uint32(data[offset : offset+4])
+	offset += 4
+	r.GraceTime = binary.LittleEndian.Uint32(data[offset : offset+4])
+	offset += 4
+	copy(r.ApplicationID[:], data[offset:offset+16])
+	offset += 16
+	copy(r.SKUID[:], data[offset:offset+16])
+	offset += 16
+	copy(r.KMSCountedID[:], data[offset:offset+16])
+	offset += 16
+	copy(r.ClientMachineID[:], data[offset:offset+16])
+	offset += 16
+	r.RequiredClientCount = binary.LittleEndian.Uint32(data[offset : offset+4])
+	offset += 4
+	r.RequestTime = binary.LittleEndian.Uint64(data[offset : offset+8])
+	offset += 8
+	copy(r.PreviousClientMachineID[:], data[offset:offset+16])
+	offset += 16
 
-	if err := binary.Read(buf, binary.LittleEndian, &r.VersionMinor); err != nil {
-		return nil, err
+	if len(data) > offset {
+		r.MachineNameRaw = make([]byte, len(data)-offset)
+		copy(r.MachineNameRaw, data[offset:])
 	}
-	if err := binary.Read(buf, binary.LittleEndian, &r.VersionMajor); err != nil {
-		return nil, err
-	}
-	if err := binary.Read(buf, binary.LittleEndian, &r.IsClientVM); err != nil {
-		return nil, err
-	}
-	if err := binary.Read(buf, binary.LittleEndian, &r.LicenseStatus); err != nil {
-		return nil, err
-	}
-	if err := binary.Read(buf, binary.LittleEndian, &r.GraceTime); err != nil {
-		return nil, err
-	}
-	if err := binary.Read(buf, binary.LittleEndian, &r.ApplicationID); err != nil {
-		return nil, err
-	}
-	if err := binary.Read(buf, binary.LittleEndian, &r.SKUID); err != nil {
-		return nil, err
-	}
-	if err := binary.Read(buf, binary.LittleEndian, &r.KMSCountedID); err != nil {
-		return nil, err
-	}
-	if err := binary.Read(buf, binary.LittleEndian, &r.ClientMachineID); err != nil {
-		return nil, err
-	}
-	if err := binary.Read(buf, binary.LittleEndian, &r.RequiredClientCount); err != nil {
-		return nil, err
-	}
-	if err := binary.Read(buf, binary.LittleEndian, &r.RequestTime); err != nil {
-		return nil, err
-	}
-	if err := binary.Read(buf, binary.LittleEndian, &r.PreviousClientMachineID); err != nil {
-		return nil, err
-	}
-
-	// Read machine name (UTF-16LE, variable length up to 126 bytes).
-	remaining := buf.Len()
-	machineData := make([]byte, remaining)
-	if _, err := buf.Read(machineData); err != nil {
-		return nil, err
-	}
-	r.MachineNameRaw = machineData
 
 	return r, nil
 }
@@ -183,54 +173,74 @@ type KMSResponse struct {
 }
 
 func (r *KMSResponse) Marshal() []byte {
-	var buf bytes.Buffer
-	binary.Write(&buf, binary.LittleEndian, r.VersionMinor)
-	binary.Write(&buf, binary.LittleEndian, r.VersionMajor)
 	epidLen := uint32(len(r.KMSEpid) + 2) // +2 for null terminator
-	binary.Write(&buf, binary.LittleEndian, epidLen)
-	buf.Write(r.KMSEpid)
-	buf.Write([]byte{0, 0}) // null terminator (UTF-16LE)
-	binary.Write(&buf, binary.LittleEndian, r.ClientMachineID)
-	binary.Write(&buf, binary.LittleEndian, r.ResponseTime)
-	binary.Write(&buf, binary.LittleEndian, r.CurrentClientCount)
-	binary.Write(&buf, binary.LittleEndian, r.VLActivationInterval)
-	binary.Write(&buf, binary.LittleEndian, r.VLRenewalInterval)
-	return buf.Bytes()
+	totalLen := 44 + int(epidLen)
+	data := make([]byte, totalLen)
+
+	offset := 0
+	binary.LittleEndian.PutUint16(data[offset:offset+2], r.VersionMinor)
+	offset += 2
+	binary.LittleEndian.PutUint16(data[offset:offset+2], r.VersionMajor)
+	offset += 2
+	binary.LittleEndian.PutUint32(data[offset:offset+4], epidLen)
+	offset += 4
+
+	copy(data[offset:offset+len(r.KMSEpid)], r.KMSEpid)
+	offset += len(r.KMSEpid)
+	data[offset] = 0
+	data[offset+1] = 0 // UTF-16LE null terminator
+	offset += 2
+
+	copy(data[offset:offset+16], r.ClientMachineID[:])
+	offset += 16
+	binary.LittleEndian.PutUint64(data[offset:offset+8], r.ResponseTime)
+	offset += 8
+	binary.LittleEndian.PutUint32(data[offset:offset+4], r.CurrentClientCount)
+	offset += 4
+	binary.LittleEndian.PutUint32(data[offset:offset+4], r.VLActivationInterval)
+	offset += 4
+	binary.LittleEndian.PutUint32(data[offset:offset+4], r.VLRenewalInterval)
+
+	return data
 }
 
 func ParseKMSResponse(data []byte) (*KMSResponse, error) {
-	r := &KMSResponse{}
-	buf := bytes.NewReader(data)
+	if len(data) < 12 {
+		return nil, fmt.Errorf("KMS response data too short: %d", len(data))
+	}
 
-	if err := binary.Read(buf, binary.LittleEndian, &r.VersionMinor); err != nil {
-		return nil, err
+	offset := 0
+	r := &KMSResponse{}
+	r.VersionMinor = binary.LittleEndian.Uint16(data[offset : offset+2])
+	offset += 2
+	r.VersionMajor = binary.LittleEndian.Uint16(data[offset : offset+2])
+	offset += 2
+	r.EPIDLen = binary.LittleEndian.Uint32(data[offset : offset+4])
+	offset += 4
+
+	epidEnd := offset + int(r.EPIDLen)
+	if epidEnd > len(data) {
+		return nil, fmt.Errorf("KMS response EPID length mismatch")
 	}
-	if err := binary.Read(buf, binary.LittleEndian, &r.VersionMajor); err != nil {
-		return nil, err
+	r.KMSEpid = make([]byte, r.EPIDLen)
+	copy(r.KMSEpid, data[offset:epidEnd])
+	offset = epidEnd
+
+	const tailSize = 16 + 8 + 4 + 4 + 4
+	if offset+tailSize > len(data) {
+		return nil, fmt.Errorf("KMS response data too short for fixed fields")
 	}
-	if err := binary.Read(buf, binary.LittleEndian, &r.EPIDLen); err != nil {
-		return nil, err
-	}
-	epid := make([]byte, r.EPIDLen)
-	if _, err := buf.Read(epid); err != nil {
-		return nil, err
-	}
-	r.KMSEpid = epid
-	if err := binary.Read(buf, binary.LittleEndian, &r.ClientMachineID); err != nil {
-		return nil, err
-	}
-	if err := binary.Read(buf, binary.LittleEndian, &r.ResponseTime); err != nil {
-		return nil, err
-	}
-	if err := binary.Read(buf, binary.LittleEndian, &r.CurrentClientCount); err != nil {
-		return nil, err
-	}
-	if err := binary.Read(buf, binary.LittleEndian, &r.VLActivationInterval); err != nil {
-		return nil, err
-	}
-	if err := binary.Read(buf, binary.LittleEndian, &r.VLRenewalInterval); err != nil {
-		return nil, err
-	}
+
+	copy(r.ClientMachineID[:], data[offset:offset+16])
+	offset += 16
+	r.ResponseTime = binary.LittleEndian.Uint64(data[offset : offset+8])
+	offset += 8
+	r.CurrentClientCount = binary.LittleEndian.Uint32(data[offset : offset+4])
+	offset += 4
+	r.VLActivationInterval = binary.LittleEndian.Uint32(data[offset : offset+4])
+	offset += 4
+	r.VLRenewalInterval = binary.LittleEndian.Uint32(data[offset : offset+4])
+
 	return r, nil
 }
 
@@ -243,11 +253,18 @@ type GenericRequestHeader struct {
 }
 
 func ParseGenericRequestHeader(data []byte) (*GenericRequestHeader, error) {
-	h := &GenericRequestHeader{}
-	buf := bytes.NewReader(data)
-	if err := binary.Read(buf, binary.LittleEndian, h); err != nil {
-		return nil, err
+	if len(data) < 12 {
+		return nil, fmt.Errorf("generic request header too short: %d", len(data))
 	}
+	offset := 0
+	h := &GenericRequestHeader{}
+	h.BodyLength1 = binary.LittleEndian.Uint32(data[offset : offset+4])
+	offset += 4
+	h.BodyLength2 = binary.LittleEndian.Uint32(data[offset : offset+4])
+	offset += 4
+	h.VersionMinor = binary.LittleEndian.Uint16(data[offset : offset+2])
+	offset += 2
+	h.VersionMajor = binary.LittleEndian.Uint16(data[offset : offset+2])
 	return h, nil
 }
 
@@ -597,13 +614,7 @@ func GenerateEPID(kmsId UUID, version uint16, lcid int) string {
 
 	for _, wb := range db.WinBuilds {
 		idx, _ := strconv.Atoi(wb.WinBuildIndex)
-		isInvalid := false
-		for _, inv := range invalidBuilds {
-			if idx == inv {
-				isInvalid = true
-				break
-			}
-		}
+		isInvalid := slices.Contains(invalidBuilds, idx)
 		if !isInvalid {
 			buildNumber = wb.BuildNumber
 			platformId = wb.PlatformId

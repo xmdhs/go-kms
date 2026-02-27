@@ -22,7 +22,7 @@ const (
 	PacketTypeBind          = 0x0B
 	PacketTypeBindAck       = 0x0C
 	PacketTypeBindNak       = 0x0D
-	PacketTypeAlterContext   = 0x0E
+	PacketTypeAlterContext  = 0x0E
 	PacketTypeAlterContextR = 0x0F
 	PacketTypeAuth3         = 0x10
 	PacketTypeShutdown      = 0x11
@@ -32,15 +32,15 @@ const (
 
 // MS-RPC packet flags.
 const (
-	FlagFirstFrag    = 0x01
-	FlagLastFrag     = 0x02
-	FlagSupportSign  = 0x04
-	FlagPendCancel   = 0x04
-	FlagReserved     = 0x08
-	FlagConcMpx      = 0x10
-	FlagDidNotExec   = 0x20
-	FlagMaybe        = 0x40
-	FlagObjectUUID   = 0x80
+	FlagFirstFrag   = 0x01
+	FlagLastFrag    = 0x02
+	FlagSupportSign = 0x04
+	FlagPendCancel  = 0x04
+	FlagReserved    = 0x08
+	FlagConcMpx     = 0x10
+	FlagDidNotExec  = 0x20
+	FlagMaybe       = 0x40
+	FlagObjectUUID  = 0x80
 )
 
 // Context result codes.
@@ -68,11 +68,23 @@ func ParseMSRPCHeader(data []byte) (*MSRPCHeader, error) {
 	if len(data) < MSRPCHeaderSize {
 		return nil, fmt.Errorf("data too short for RPC header: %d", len(data))
 	}
+	offset := 0
 	h := &MSRPCHeader{}
-	buf := bytes.NewReader(data)
-	if err := binary.Read(buf, binary.LittleEndian, h); err != nil {
-		return nil, err
-	}
+	h.VerMajor = data[offset]
+	offset++
+	h.VerMinor = data[offset]
+	offset++
+	h.Type = data[offset]
+	offset++
+	h.Flags = data[offset]
+	offset++
+	h.Representation = binary.LittleEndian.Uint32(data[offset : offset+4])
+	offset += 4
+	h.FragLen = binary.LittleEndian.Uint16(data[offset : offset+2])
+	offset += 2
+	h.AuthLen = binary.LittleEndian.Uint16(data[offset : offset+2])
+	offset += 2
+	h.CallID = binary.LittleEndian.Uint32(data[offset : offset+4])
 	return h, nil
 }
 
@@ -115,11 +127,29 @@ func ParseMSRPCRequestHeader(data []byte) (*MSRPCRequestHeader, error) {
 	if len(data) < MSRPCRequestHeaderSize {
 		return nil, fmt.Errorf("data too short for RPC request header: %d", len(data))
 	}
+	offset := 0
 	h := &MSRPCRequestHeader{}
-	buf := bytes.NewReader(data)
-	if err := binary.Read(buf, binary.LittleEndian, h); err != nil {
-		return nil, err
-	}
+	h.VerMajor = data[offset]
+	offset++
+	h.VerMinor = data[offset]
+	offset++
+	h.Type = data[offset]
+	offset++
+	h.Flags = data[offset]
+	offset++
+	h.Representation = binary.LittleEndian.Uint32(data[offset : offset+4])
+	offset += 4
+	h.FragLen = binary.LittleEndian.Uint16(data[offset : offset+2])
+	offset += 2
+	h.AuthLen = binary.LittleEndian.Uint16(data[offset : offset+2])
+	offset += 2
+	h.CallID = binary.LittleEndian.Uint32(data[offset : offset+4])
+	offset += 4
+	h.AllocHint = binary.LittleEndian.Uint32(data[offset : offset+4])
+	offset += 4
+	h.CtxID = binary.LittleEndian.Uint16(data[offset : offset+2])
+	offset += 2
+	h.OpNum = binary.LittleEndian.Uint16(data[offset : offset+2])
 	return h, nil
 }
 
@@ -205,36 +235,45 @@ type CtxItem struct {
 const CtxItemSize = 44
 
 func ParseBindRequest(data []byte) (*BindRequest, error) {
-	if len(data) < 8 {
+	if len(data) < 12 {
 		return nil, fmt.Errorf("data too short for BIND request")
 	}
+	offset := 0
 	b := &BindRequest{}
-	buf := bytes.NewReader(data)
-	if err := binary.Read(buf, binary.LittleEndian, &b.MaxTFrag); err != nil {
-		return nil, err
-	}
-	if err := binary.Read(buf, binary.LittleEndian, &b.MaxRFrag); err != nil {
-		return nil, err
-	}
-	if err := binary.Read(buf, binary.LittleEndian, &b.AssocGroup); err != nil {
-		return nil, err
-	}
-	if err := binary.Read(buf, binary.LittleEndian, &b.CtxNum); err != nil {
-		return nil, err
-	}
-	if err := binary.Read(buf, binary.LittleEndian, &b.Reserved); err != nil {
-		return nil, err
-	}
-	if err := binary.Read(buf, binary.LittleEndian, &b.Reserved2); err != nil {
-		return nil, err
-	}
+	b.MaxTFrag = binary.LittleEndian.Uint16(data[offset : offset+2])
+	offset += 2
+	b.MaxRFrag = binary.LittleEndian.Uint16(data[offset : offset+2])
+	offset += 2
+	b.AssocGroup = binary.LittleEndian.Uint32(data[offset : offset+4])
+	offset += 4
+	b.CtxNum = data[offset]
+	offset++
+	b.Reserved = data[offset]
+	offset++
+	b.Reserved2 = binary.LittleEndian.Uint16(data[offset : offset+2])
+	offset += 2
 
 	for i := 0; i < int(b.CtxNum); i++ {
-		var item CtxItem
-		if err := binary.Read(buf, binary.LittleEndian, &item); err != nil {
-			return nil, err
+		if offset+CtxItemSize > len(data) {
+			return nil, fmt.Errorf("data too short for context item %d", i)
 		}
+		itemOffset := offset
+		item := CtxItem{}
+		item.ContextID = binary.LittleEndian.Uint16(data[itemOffset : itemOffset+2])
+		itemOffset += 2
+		item.TransItems = data[itemOffset]
+		itemOffset++
+		item.Pad = data[itemOffset]
+		itemOffset++
+		copy(item.AbstractSyntaxUUID[:], data[itemOffset:itemOffset+16])
+		itemOffset += 16
+		item.AbstractSyntaxVer = binary.LittleEndian.Uint32(data[itemOffset : itemOffset+4])
+		itemOffset += 4
+		copy(item.TransferSyntaxUUID[:], data[itemOffset:itemOffset+16])
+		itemOffset += 16
+		item.TransferSyntaxVer = binary.LittleEndian.Uint32(data[itemOffset : itemOffset+4])
 		b.CtxItems = append(b.CtxItems, item)
+		offset += CtxItemSize
 	}
 
 	return b, nil
@@ -338,13 +377,13 @@ func BuildBindAckResponse(reqData []byte, port int, callID uint32) ([]byte, erro
 	buf.WriteByte(0) // null terminator
 
 	// Padding.
-	for i := 0; i < pad; i++ {
+	for range pad {
 		buf.WriteByte(0)
 	}
 
 	// Context results.
-	buf.WriteByte(bind.CtxNum)  // ctx_num
-	buf.WriteByte(0)            // Reserved
+	buf.WriteByte(bind.CtxNum)                         // ctx_num
+	buf.WriteByte(0)                                   // Reserved
 	binary.Write(&buf, binary.LittleEndian, uint16(0)) // Reserved2
 	buf.Write(ctxResults)
 
@@ -380,8 +419,8 @@ func BuildBindRequest(callID uint32) []byte {
 	binary.Write(&bindBody, binary.LittleEndian, uint16(5840)) // max_tfrag
 	binary.Write(&bindBody, binary.LittleEndian, uint16(5840)) // max_rfrag
 	binary.Write(&bindBody, binary.LittleEndian, uint32(0))    // assoc_group
-	bindBody.WriteByte(2)                                       // ctx_num
-	bindBody.WriteByte(0)                                       // Reserved
+	bindBody.WriteByte(2)                                      // ctx_num
+	bindBody.WriteByte(0)                                      // Reserved
 	binary.Write(&bindBody, binary.LittleEndian, uint16(0))    // Reserved2
 	binary.Write(&bindBody, binary.LittleEndian, &firstCtx)
 	binary.Write(&bindBody, binary.LittleEndian, &secondCtx)

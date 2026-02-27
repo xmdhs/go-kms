@@ -2,6 +2,8 @@
 
 KMS server/client simulator implemented in Go.
 
+port of [py-kms](https://github.com/SystemRage/py-kms) by Claude Opus 4.6 & Qwen3.5-Plus
+
 ## Usage
 
 ### Start Server

@@ -47,9 +47,9 @@ func HandleV4Request(data []byte, config *ServerConfig) ([]byte, error) {
 	padding := make([]byte, GetPadding(int(bodyLength)))
 
 	var resp bytes.Buffer
-	binary.Write(&resp, binary.LittleEndian, bodyLength)               // bodyLength1
-	binary.Write(&resp, binary.BigEndian, uint32(0x00000200))          // unknown (big-endian per py-kms)
-	binary.Write(&resp, binary.LittleEndian, bodyLength)               // bodyLength2
+	binary.Write(&resp, binary.LittleEndian, bodyLength)      // bodyLength1
+	binary.Write(&resp, binary.BigEndian, uint32(0x00000200)) // unknown (big-endian per py-kms)
+	binary.Write(&resp, binary.LittleEndian, bodyLength)      // bodyLength2
 	resp.Write(responseBytes)
 	resp.Write(theHash)
 	resp.Write(padding)
@@ -135,7 +135,7 @@ func handleV5V6Request(data []byte, config *ServerConfig, isV6 bool) ([]byte, er
 
 	// Calculate randomStuff = SaltC ^ DSaltC ^ randomSalt
 	randomStuff := make([]byte, 16)
-	for i := 0; i < 16; i++ {
+	for i := range 16 {
 		if isV6 {
 			randomStuff[i] = salt[i] ^ decryptedSalt[i] ^ randomSalt[i]
 		} else {
@@ -148,7 +148,7 @@ func handleV5V6Request(data []byte, config *ServerConfig, isV6 bool) ([]byte, er
 	if isV6 {
 		// V6: response + keys(16) + hash(32) + hwid(8) + xorSalts(16) + hmac(16)
 		xorSalts := make([]byte, 16)
-		for i := 0; i < 16; i++ {
+		for i := range 16 {
 			xorSalts[i] = salt[i] ^ decryptedSalt[i]
 		}
 
@@ -172,7 +172,7 @@ func handleV5V6Request(data []byte, config *ServerConfig, isV6 bool) ([]byte, er
 
 		// HMacMsg = (SaltS ^ DSaltS) + message
 		hmacMsg := make([]byte, 16)
-		for i := 0; i < 16; i++ {
+		for i := range 16 {
 			hmacMsg[i] = saltS[i] ^ dsaltS[i]
 		}
 		hmacMsg = append(hmacMsg, messageBytes...)
@@ -223,9 +223,9 @@ func buildV5V6Response(versionMinor, versionMajor uint16, iv, encrypted []byte) 
 	padding := make([]byte, GetPadding(int(bodyLength)))
 
 	var resp bytes.Buffer
-	binary.Write(&resp, binary.LittleEndian, bodyLength)         // bodyLength1
-	binary.Write(&resp, binary.BigEndian, uint32(0x00000200))    // unknown (big-endian per py-kms)
-	binary.Write(&resp, binary.LittleEndian, bodyLength)         // bodyLength2
+	binary.Write(&resp, binary.LittleEndian, bodyLength)      // bodyLength1
+	binary.Write(&resp, binary.BigEndian, uint32(0x00000200)) // unknown (big-endian per py-kms)
+	binary.Write(&resp, binary.LittleEndian, bodyLength)      // bodyLength2
 	binary.Write(&resp, binary.LittleEndian, versionMinor)
 	binary.Write(&resp, binary.LittleEndian, versionMajor)
 	resp.Write(iv)
