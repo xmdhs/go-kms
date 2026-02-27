@@ -11,6 +11,7 @@ import (
 	"math/rand"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf16"
 )
@@ -486,6 +487,8 @@ type xmlSkuItem struct {
 //go:embed KmsDataBase.xml
 var kmsDataBaseFile []byte
 
+var kmsDB = sync.OnceValues(LoadKmsDB)
+
 func LoadKmsDB() (*KmsDataBase, error) {
 	data := kmsDataBaseFile
 
@@ -546,7 +549,7 @@ func LoadKmsDB() (*KmsDataBase, error) {
 
 // GenerateEPID generates an ePID string.
 func GenerateEPID(kmsId UUID, version uint16, lcid int) string {
-	db, err := LoadKmsDB()
+	db, err := kmsDB()
 	if err != nil {
 		// Fallback to Windows Server 2019 parameters.
 		return generateFallbackEPID(lcid)
