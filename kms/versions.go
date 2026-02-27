@@ -16,13 +16,13 @@ func HandleV4Request(data []byte, config *ServerConfig) ([]byte, error) {
 		return nil, fmt.Errorf("V4 request too short")
 	}
 
-	buf := bytes.NewReader(data)
-	var bodyLength1, bodyLength2 uint32
-	binary.Read(buf, binary.LittleEndian, &bodyLength1)
-	binary.Read(buf, binary.LittleEndian, &bodyLength2)
+	offset := 0
+	bodyLength1 := binary.LittleEndian.Uint32(data[offset:])
+	offset += 4
+	offset += 4 // skip bodyLength2
 
 	// The remaining data contains the KMS request + hash + padding.
-	remaining := data[8:]
+	remaining := data[offset:]
 	if int(bodyLength1) > len(remaining) {
 		return nil, fmt.Errorf("V4 body length mismatch")
 	}
@@ -46,16 +46,22 @@ func HandleV4Request(data []byte, config *ServerConfig) ([]byte, error) {
 	bodyLength := uint32(len(responseBytes) + len(theHash))
 	padding := make([]byte, GetPadding(int(bodyLength)))
 
-	var resp bytes.Buffer
-	binary.Write(&resp, binary.LittleEndian, bodyLength)      // bodyLength1
-	binary.Write(&resp, binary.BigEndian, uint32(0x00000200)) // unknown (big-endian per py-kms)
-	binary.Write(&resp, binary.LittleEndian, bodyLength)      // bodyLength2
-	resp.Write(responseBytes)
-	resp.Write(theHash)
-	resp.Write(padding)
+	resp := make([]byte, 4+4+4+len(responseBytes)+len(theHash)+len(padding))
+	offset = 0
+	binary.LittleEndian.PutUint32(resp[offset:], bodyLength)
+	offset += 4
+	binary.BigEndian.PutUint32(resp[offset:], uint32(0x00000200))
+	offset += 4
+	binary.LittleEndian.PutUint32(resp[offset:], bodyLength)
+	offset += 4
+	copy(resp[offset:], responseBytes)
+	offset += len(responseBytes)
+	copy(resp[offset:], theHash)
+	offset += len(theHash)
+	copy(resp[offset:], padding)
 
 	log.Printf("KMS V4 Response generated")
-	return resp.Bytes(), nil
+	return resp, nil
 }
 
 // HandleV5Request processes a KMS V5 request.
@@ -74,16 +80,17 @@ func handleV5V6Request(data []byte, config *ServerConfig, isV6 bool) ([]byte, er
 		return nil, fmt.Errorf("V5/V6 request too short")
 	}
 
-	buf := bytes.NewReader(data)
-	var bodyLength1, bodyLength2 uint32
-	var versionMinor, versionMajor uint16
-	binary.Read(buf, binary.LittleEndian, &bodyLength1)
-	binary.Read(buf, binary.LittleEndian, &bodyLength2)
-	binary.Read(buf, binary.LittleEndian, &versionMinor)
-	binary.Read(buf, binary.LittleEndian, &versionMajor)
+	offset := 0
+	bodyLength1 := binary.LittleEndian.Uint32(data[offset:])
+	offset += 4
+	offset += 4 // skip bodyLength2
+	versionMinor := binary.LittleEndian.Uint16(data[offset:])
+	offset += 2
+	versionMajor := binary.LittleEndian.Uint16(data[offset:])
+	offset += 2
 
 	// Message data starts after bodyLength1(4) + bodyLength2(4) + versionMinor(2) + versionMajor(2)
-	messageData := data[12:]
+	messageData := data[offset:]
 	// The ciphertext length is bodyLength - 4 (versionMinor + versionMajor)
 	ciphertextLen := int(bodyLength1) - 4
 	if len(messageData) < ciphertextLen || ciphertextLen < 16 {
@@ -92,19 +99,11 @@ func handleV5V6Request(data []byte, config *ServerConfig, isV6 bool) ([]byte, er
 
 	salt := messageData[:16]
 
-	// Select key.
-	var key []byte
-	if isV6 {
-		key = crypto.V6Key
-	} else {
-		key = crypto.V5Key
-	}
-
 	// Decrypt the entire ciphertext using the first 16 bytes (salt) as IV,
 	// matching the Python py-kms behavior.
 	iv := make([]byte, 16)
 	copy(iv, salt)
-	decrypted, err := crypto.AESDecryptCBC(messageData[:ciphertextLen], key, iv, isV6)
+	decrypted, err := crypto.KMSDecryptCBC(messageData[:ciphertextLen], iv, isV6)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decrypt request: %w", err)
 	}
@@ -165,7 +164,7 @@ func handleV5V6Request(data []byte, config *ServerConfig, isV6 bool) ([]byte, er
 		saltS := crypto.RandomSalt()
 		ivS := make([]byte, 16)
 		copy(ivS, saltS)
-		dsaltS, err := crypto.AESDecryptCBC(saltS, key, ivS, true)
+		dsaltS, err := crypto.KMSDecryptCBC(saltS, ivS, true)
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate DSaltS: %w", err)
 		}
@@ -189,7 +188,7 @@ func handleV5V6Request(data []byte, config *ServerConfig, isV6 bool) ([]byte, er
 		padded := crypto.PKCS7Pad(responseData.Bytes(), 16)
 		ivEnc := make([]byte, 16)
 		copy(ivEnc, saltS)
-		encryptedResp, err := crypto.AESEncryptCBC(padded, key, ivEnc, true)
+		encryptedResp, err := crypto.KMSEncryptCBC(padded, ivEnc, true)
 		if err != nil {
 			return nil, fmt.Errorf("failed to encrypt V6 response: %w", err)
 		}
@@ -205,7 +204,7 @@ func handleV5V6Request(data []byte, config *ServerConfig, isV6 bool) ([]byte, er
 	padded := crypto.PKCS7Pad(responseData.Bytes(), 16)
 	ivEnc := make([]byte, 16)
 	copy(ivEnc, salt)
-	encryptedResp, err := crypto.AESEncryptCBC(padded, key, ivEnc, false)
+	encryptedResp, err := crypto.KMSEncryptCBC(padded, ivEnc, false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encrypt V5 response: %w", err)
 	}
@@ -222,15 +221,23 @@ func buildV5V6Response(versionMinor, versionMajor uint16, iv, encrypted []byte) 
 	bodyLength := uint32(2 + 2 + len(iv) + len(encrypted))
 	padding := make([]byte, GetPadding(int(bodyLength)))
 
-	var resp bytes.Buffer
-	binary.Write(&resp, binary.LittleEndian, bodyLength)      // bodyLength1
-	binary.Write(&resp, binary.BigEndian, uint32(0x00000200)) // unknown (big-endian per py-kms)
-	binary.Write(&resp, binary.LittleEndian, bodyLength)      // bodyLength2
-	binary.Write(&resp, binary.LittleEndian, versionMinor)
-	binary.Write(&resp, binary.LittleEndian, versionMajor)
-	resp.Write(iv)
-	resp.Write(encrypted)
-	resp.Write(padding)
+	resp := make([]byte, 4+4+4+2+2+len(iv)+len(encrypted)+len(padding))
+	offset := 0
+	binary.LittleEndian.PutUint32(resp[offset:], bodyLength)
+	offset += 4
+	binary.BigEndian.PutUint32(resp[offset:], uint32(0x00000200))
+	offset += 4
+	binary.LittleEndian.PutUint32(resp[offset:], bodyLength)
+	offset += 4
+	binary.LittleEndian.PutUint16(resp[offset:], versionMinor)
+	offset += 2
+	binary.LittleEndian.PutUint16(resp[offset:], versionMajor)
+	offset += 2
+	copy(resp[offset:], iv)
+	offset += len(iv)
+	copy(resp[offset:], encrypted)
+	offset += len(encrypted)
+	copy(resp[offset:], padding)
 
-	return resp.Bytes()
+	return resp
 }

@@ -251,19 +251,12 @@ func buildV6ClientRequest(kmsData []byte, versionMinor, versionMajor uint16) ([]
 }
 
 func buildV5V6ClientRequest(kmsData []byte, versionMinor, versionMajor uint16, isV6 bool) ([]byte, error) {
-	var key []byte
-	if isV6 {
-		key = crypto.V6Key
-	} else {
-		key = crypto.V5Key
-	}
-
 	esalt := crypto.RandomSalt()
 	iv := make([]byte, 16)
 	copy(iv, esalt)
 
 	// Decrypt esalt to get dsalt.
-	dsalt, err := crypto.AESDecryptCBC(esalt, key, iv, isV6)
+	dsalt, err := crypto.KMSDecryptCBC(esalt, iv, isV6)
 	if err != nil {
 		return nil, err
 	}
@@ -277,7 +270,7 @@ func buildV5V6ClientRequest(kmsData []byte, versionMinor, versionMajor uint16, i
 	padded := crypto.PKCS7Pad(decrypted.Bytes(), 16)
 	encIV := make([]byte, 16)
 	copy(encIV, esalt)
-	encrypted, err := crypto.AESEncryptCBC(padded, key, encIV, isV6)
+	encrypted, err := crypto.KMSEncryptCBC(padded, encIV, isV6)
 	if err != nil {
 		return nil, err
 	}
@@ -361,16 +354,9 @@ func parseV5V6Response(data []byte, isV6 bool) error {
 	}
 	encrypted := remaining[16:encryptedEnd]
 
-	var key []byte
-	if isV6 {
-		key = crypto.V6Key
-	} else {
-		key = crypto.V5Key
-	}
-
 	iv := make([]byte, 16)
 	copy(iv, salt)
-	decrypted, err := crypto.AESDecryptCBC(encrypted, key, iv, isV6)
+	decrypted, err := crypto.KMSDecryptCBC(encrypted, iv, isV6)
 	if err != nil {
 		return fmt.Errorf("failed to decrypt response: %w", err)
 	}

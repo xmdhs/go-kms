@@ -55,13 +55,13 @@ var (
 	v4ExpandedKey = sync.OnceValue(func() []byte { return expandKey(V4Key, 20, 192) })
 )
 
-// AESEncryptCBC encrypts data using AES-CBC with the given key and IV.
+// KMSEncryptCBC encrypts KMS V5/V6 payload data using protocol-defined AES-CBC.
 // The caller is responsible for PKCS7 padding before calling this function.
-func AESEncryptCBC(data, key, iv []byte, v6 bool) ([]byte, error) {
+func KMSEncryptCBC(data, iv []byte, v6 bool) ([]byte, error) {
 	if v6 {
 		return aesEncryptCBCV6(data, iv)
 	}
-	block, err := aes.NewCipher(key)
+	block, err := aes.NewCipher(V5Key)
 	if err != nil {
 		return nil, err
 	}
@@ -74,12 +74,12 @@ func AESEncryptCBC(data, key, iv []byte, v6 bool) ([]byte, error) {
 	return ciphertext, nil
 }
 
-// AESDecryptCBC decrypts data using AES-CBC with the given key and IV.
-func AESDecryptCBC(data, key, iv []byte, v6 bool) ([]byte, error) {
+// KMSDecryptCBC decrypts KMS V5/V6 payload data using protocol-defined AES-CBC.
+func KMSDecryptCBC(data, iv []byte, v6 bool) ([]byte, error) {
 	if v6 {
 		return aesDecryptCBCV6(data, iv)
 	}
-	block, err := aes.NewCipher(key)
+	block, err := aes.NewCipher(V5Key)
 	if err != nil {
 		return nil, err
 	}

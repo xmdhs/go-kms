@@ -48,7 +48,7 @@ func BenchmarkAESEncryptCBC_V5(b *testing.B) {
 	rand.Read(iv)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		AESEncryptCBC(data, V5Key, iv, false)
+		KMSEncryptCBC(data, iv, false)
 	}
 }
 
@@ -60,7 +60,7 @@ func BenchmarkAESDecryptCBC_V5(b *testing.B) {
 	rand.Read(iv)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		AESDecryptCBC(data, V5Key, iv, false)
+		KMSDecryptCBC(data, iv, false)
 	}
 }
 
@@ -73,7 +73,7 @@ func BenchmarkAESEncryptCBC_V6(b *testing.B) {
 	rand.Read(iv)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		AESEncryptCBC(data, V6Key, iv, true)
+		KMSEncryptCBC(data, iv, true)
 	}
 }
 
@@ -85,7 +85,7 @@ func BenchmarkAESDecryptCBC_V6(b *testing.B) {
 	rand.Read(iv)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		AESDecryptCBC(data, V6Key, iv, true)
+		KMSDecryptCBC(data, iv, true)
 	}
 }
 
