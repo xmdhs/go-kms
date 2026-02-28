@@ -1,7 +1,6 @@
 package kms
 
 import (
-	"bytes"
 	_ "embed"
 	"encoding/binary"
 	"encoding/hex"
@@ -142,21 +141,35 @@ func ParseKMSRequest(data []byte) (*KMSRequest, error) {
 }
 
 func (r *KMSRequest) Marshal() []byte {
-	var buf bytes.Buffer
-	binary.Write(&buf, binary.LittleEndian, r.VersionMinor)
-	binary.Write(&buf, binary.LittleEndian, r.VersionMajor)
-	binary.Write(&buf, binary.LittleEndian, r.IsClientVM)
-	binary.Write(&buf, binary.LittleEndian, r.LicenseStatus)
-	binary.Write(&buf, binary.LittleEndian, r.GraceTime)
-	binary.Write(&buf, binary.LittleEndian, r.ApplicationID)
-	binary.Write(&buf, binary.LittleEndian, r.SKUID)
-	binary.Write(&buf, binary.LittleEndian, r.KMSCountedID)
-	binary.Write(&buf, binary.LittleEndian, r.ClientMachineID)
-	binary.Write(&buf, binary.LittleEndian, r.RequiredClientCount)
-	binary.Write(&buf, binary.LittleEndian, r.RequestTime)
-	binary.Write(&buf, binary.LittleEndian, r.PreviousClientMachineID)
-	buf.Write(r.MachineNameRaw)
-	return buf.Bytes()
+	const fixedSize = 108 // 2+2+4+4+4+16+16+16+16+4+8+16
+	resp := make([]byte, fixedSize+len(r.MachineNameRaw))
+	offset := 0
+	binary.LittleEndian.PutUint16(resp[offset:offset+2], r.VersionMinor)
+	offset += 2
+	binary.LittleEndian.PutUint16(resp[offset:offset+2], r.VersionMajor)
+	offset += 2
+	binary.LittleEndian.PutUint32(resp[offset:offset+4], r.IsClientVM)
+	offset += 4
+	binary.LittleEndian.PutUint32(resp[offset:offset+4], r.LicenseStatus)
+	offset += 4
+	binary.LittleEndian.PutUint32(resp[offset:offset+4], r.GraceTime)
+	offset += 4
+	copy(resp[offset:offset+16], r.ApplicationID[:])
+	offset += 16
+	copy(resp[offset:offset+16], r.SKUID[:])
+	offset += 16
+	copy(resp[offset:offset+16], r.KMSCountedID[:])
+	offset += 16
+	copy(resp[offset:offset+16], r.ClientMachineID[:])
+	offset += 16
+	binary.LittleEndian.PutUint32(resp[offset:offset+4], r.RequiredClientCount)
+	offset += 4
+	binary.LittleEndian.PutUint64(resp[offset:offset+8], r.RequestTime)
+	offset += 8
+	copy(resp[offset:offset+16], r.PreviousClientMachineID[:])
+	offset += 16
+	copy(resp[offset:], r.MachineNameRaw)
+	return resp
 }
 
 // KMSResponse represents the server's activation response (wire format).
@@ -693,9 +706,9 @@ func padLeft(s string, length int, pad string) string {
 
 // HandleUnknownRequest returns an error response for unhandled versions.
 func HandleUnknownRequest() ([]byte, error) {
-	var buf bytes.Buffer
-	binary.Write(&buf, binary.LittleEndian, uint32(0))
-	binary.Write(&buf, binary.LittleEndian, uint32(0))
-	binary.Write(&buf, binary.LittleEndian, uint32(0xC004F042)) // SL_E_VL_KEY_MANAGEMENT_SERVICE_ID_MISMATCH
-	return buf.Bytes(), nil
+	resp := make([]byte, 12)
+	binary.LittleEndian.PutUint32(resp[0:4], 0)
+	binary.LittleEndian.PutUint32(resp[4:8], 0)
+	binary.LittleEndian.PutUint32(resp[8:12], 0xC004F042) // SL_E_VL_KEY_MANAGEMENT_SERVICE_ID_MISMATCH
+	return resp, nil
 }

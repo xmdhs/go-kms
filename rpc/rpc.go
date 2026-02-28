@@ -1,7 +1,6 @@
 package rpc
 
 import (
-	"bytes"
 	"encoding/binary"
 	"fmt"
 )
@@ -89,9 +88,24 @@ func ParseMSRPCHeader(data []byte) (*MSRPCHeader, error) {
 }
 
 func (h *MSRPCHeader) Marshal() []byte {
-	var buf bytes.Buffer
-	binary.Write(&buf, binary.LittleEndian, h)
-	return buf.Bytes()
+	resp := make([]byte, MSRPCHeaderSize)
+	offset := 0
+	resp[offset] = h.VerMajor
+	offset++
+	resp[offset] = h.VerMinor
+	offset++
+	resp[offset] = h.Type
+	offset++
+	resp[offset] = h.Flags
+	offset++
+	binary.LittleEndian.PutUint32(resp[offset:offset+4], h.Representation)
+	offset += 4
+	binary.LittleEndian.PutUint16(resp[offset:offset+2], h.FragLen)
+	offset += 2
+	binary.LittleEndian.PutUint16(resp[offset:offset+2], h.AuthLen)
+	offset += 2
+	binary.LittleEndian.PutUint32(resp[offset:offset+4], h.CallID)
+	return resp
 }
 
 // PDUData extracts the PDU data from a complete RPC packet.
@@ -204,10 +218,35 @@ func BuildMSRPCResponse(reqHeader *MSRPCRequestHeader, pduData []byte) []byte {
 		Padding:     0,
 	}
 
-	var buf bytes.Buffer
-	binary.Write(&buf, binary.LittleEndian, &resp)
-	buf.Write(pduData)
-	return buf.Bytes()
+	respBytes := make([]byte, MSRPCRespHeaderSize)
+	offset := 0
+	respBytes[offset] = resp.VerMajor
+	offset++
+	respBytes[offset] = resp.VerMinor
+	offset++
+	respBytes[offset] = resp.Type
+	offset++
+	respBytes[offset] = resp.Flags
+	offset++
+	binary.LittleEndian.PutUint32(respBytes[offset:offset+4], resp.Representation)
+	offset += 4
+	binary.LittleEndian.PutUint16(respBytes[offset:offset+2], resp.FragLen)
+	offset += 2
+	binary.LittleEndian.PutUint16(respBytes[offset:offset+2], resp.AuthLen)
+	offset += 2
+	binary.LittleEndian.PutUint32(respBytes[offset:offset+4], resp.CallID)
+	offset += 4
+	binary.LittleEndian.PutUint32(respBytes[offset:offset+4], resp.AllocHint)
+	offset += 4
+	binary.LittleEndian.PutUint16(respBytes[offset:offset+2], resp.CtxID)
+	offset += 2
+	respBytes[offset] = resp.CancelCount
+	offset++
+	respBytes[offset] = resp.Padding
+	result := make([]byte, MSRPCRespHeaderSize+len(pduData))
+	copy(result, respBytes)
+	copy(result[MSRPCRespHeaderSize:], pduData)
+	return result
 }
 
 // BindRequest represents an RPC BIND request body.
@@ -342,129 +381,174 @@ func BuildBindAckResponse(reqData []byte, port int, callID uint32) ([]byte, erro
 				TransferSyntaxVer:  0,
 			}
 		}
-		var rbuf bytes.Buffer
-		binary.Write(&rbuf, binary.LittleEndian, &result)
-		ctxResults = append(ctxResults, rbuf.Bytes()...)
+		resultBytes := make([]byte, CtxItemResultSize)
+		binary.LittleEndian.PutUint16(resultBytes[0:2], result.Result)
+		binary.LittleEndian.PutUint16(resultBytes[2:4], result.Reason)
+		copy(resultBytes[4:20], result.TransferSyntaxUUID[:])
+		binary.LittleEndian.PutUint32(resultBytes[20:24], result.TransferSyntaxVer)
+		ctxResults = append(ctxResults, resultBytes...)
 	}
 
 	// Calculate total fragment length.
 	fragLen := 26 + int(secondaryAddrLen) + pad + 4 + len(ctxResults)
 
 	// Build the response.
-	var buf bytes.Buffer
-
-	// Common header.
-	respHeader := MSRPCHeader{
-		VerMajor:       header.VerMajor,
-		VerMinor:       header.VerMinor,
-		Type:           PacketTypeBindAck,
-		Flags:          FlagFirstFrag | FlagLastFrag | FlagConcMpx,
-		Representation: header.Representation,
-		FragLen:        uint16(fragLen),
-		AuthLen:        header.AuthLen,
-		CallID:         callID,
-	}
-	binary.Write(&buf, binary.LittleEndian, &respHeader)
+	resp := make([]byte, fragLen)
+	offset := 0
+	resp[offset] = header.VerMajor
+	offset++
+	resp[offset] = header.VerMinor
+	offset++
+	resp[offset] = PacketTypeBindAck
+	offset++
+	resp[offset] = FlagFirstFrag | FlagLastFrag | FlagConcMpx
+	offset++
+	binary.LittleEndian.PutUint32(resp[offset:offset+4], header.Representation)
+	offset += 4
+	binary.LittleEndian.PutUint16(resp[offset:offset+2], uint16(fragLen))
+	offset += 2
+	binary.LittleEndian.PutUint16(resp[offset:offset+2], header.AuthLen)
+	offset += 2
+	binary.LittleEndian.PutUint32(resp[offset:offset+4], callID)
+	offset += 4
 
 	// Bind ACK specific fields.
-	binary.Write(&buf, binary.LittleEndian, bind.MaxTFrag)
-	binary.Write(&buf, binary.LittleEndian, bind.MaxRFrag)
-	binary.Write(&buf, binary.LittleEndian, uint32(0x1063bf3f)) // assoc_group
+	binary.LittleEndian.PutUint16(resp[offset:offset+2], bind.MaxTFrag)
+	offset += 2
+	binary.LittleEndian.PutUint16(resp[offset:offset+2], bind.MaxRFrag)
+	offset += 2
+	binary.LittleEndian.PutUint32(resp[offset:offset+4], 0x1063bf3f) // assoc_group
+	offset += 4
 
 	// Secondary address.
-	binary.Write(&buf, binary.LittleEndian, secondaryAddrLen)
-	buf.Write([]byte(portStr))
-	buf.WriteByte(0) // null terminator
+	binary.LittleEndian.PutUint16(resp[offset:offset+2], secondaryAddrLen)
+	offset += 2
+	copy(resp[offset:], portStr)
+	offset += len(portStr)
+	resp[offset] = 0 // null terminator
+	offset++
 
 	// Padding.
 	for range pad {
-		buf.WriteByte(0)
+		resp[offset] = 0
+		offset++
 	}
 
 	// Context results.
-	buf.WriteByte(bind.CtxNum)                         // ctx_num
-	buf.WriteByte(0)                                   // Reserved
-	binary.Write(&buf, binary.LittleEndian, uint16(0)) // Reserved2
-	buf.Write(ctxResults)
+	resp[offset] = bind.CtxNum // ctx_num
+	offset++
+	resp[offset] = 0           // Reserved
+	offset++
+	// Reserved2 (already 0)
+	offset += 2
+	copy(resp[offset:], ctxResults)
 
-	return buf.Bytes(), nil
+	return resp, nil
 }
 
 // BuildBindRequest creates a BIND request for the client.
 func BuildBindRequest(callID uint32) []byte {
 	kmsUUID := [16]byte{0x75, 0x21, 0xc8, 0x51, 0x4e, 0x84, 0x50, 0x47, 0xb0, 0xd8, 0xec, 0x25, 0x55, 0x55, 0xbc, 0x06}
 
-	firstCtx := CtxItem{
-		ContextID:          0,
-		TransItems:         1,
-		Pad:                0,
-		AbstractSyntaxUUID: kmsUUID,
-		AbstractSyntaxVer:  1,
-		TransferSyntaxUUID: UUIDNDR32,
-		TransferSyntaxVer:  2,
-	}
+	// Build bind body directly.
+	bindBody := make([]byte, 5840*0+CtxItemSize*2)
+	offset := 0
+	binary.LittleEndian.PutUint16(bindBody[offset:offset+2], 5840) // max_tfrag
+	offset += 2
+	binary.LittleEndian.PutUint16(bindBody[offset:offset+2], 5840) // max_rfrag
+	offset += 2
+	binary.LittleEndian.PutUint32(bindBody[offset:offset+4], 0)    // assoc_group
+	offset += 4
+	bindBody[offset] = 2                                           // ctx_num
+	offset++
+	bindBody[offset] = 0                                           // Reserved
+	offset++
+	// Reserved2
+	offset += 2
 
-	secondCtx := CtxItem{
-		ContextID:          1,
-		TransItems:         1,
-		Pad:                0,
-		AbstractSyntaxUUID: kmsUUID,
-		AbstractSyntaxVer:  1,
-		TransferSyntaxUUID: UUIDTime,
-		TransferSyntaxVer:  1,
-	}
+	// First context item.
+	copy(bindBody[offset:offset+2], []byte{0, 0})                  // ContextID
+	offset += 2
+	bindBody[offset] = 1                                           // TransItems
+	offset++
+	bindBody[offset] = 0                                           // Pad
+	offset++
+	copy(bindBody[offset:offset+16], kmsUUID[:])                   // AbstractSyntaxUUID
+	offset += 16
+	binary.LittleEndian.PutUint32(bindBody[offset:offset+4], 1)    // AbstractSyntaxVer
+	offset += 4
+	copy(bindBody[offset:offset+16], UUIDNDR32[:])                 // TransferSyntaxUUID
+	offset += 16
+	binary.LittleEndian.PutUint32(bindBody[offset:offset+4], 2)    // TransferSyntaxVer
+	offset += 4
 
-	// Build bind body.
-	var bindBody bytes.Buffer
-	binary.Write(&bindBody, binary.LittleEndian, uint16(5840)) // max_tfrag
-	binary.Write(&bindBody, binary.LittleEndian, uint16(5840)) // max_rfrag
-	binary.Write(&bindBody, binary.LittleEndian, uint32(0))    // assoc_group
-	bindBody.WriteByte(2)                                      // ctx_num
-	bindBody.WriteByte(0)                                      // Reserved
-	binary.Write(&bindBody, binary.LittleEndian, uint16(0))    // Reserved2
-	binary.Write(&bindBody, binary.LittleEndian, &firstCtx)
-	binary.Write(&bindBody, binary.LittleEndian, &secondCtx)
+	// Second context item.
+	copy(bindBody[offset:offset+2], []byte{1, 0})                  // ContextID
+	offset += 2
+	bindBody[offset] = 1                                           // TransItems
+	offset++
+	bindBody[offset] = 0                                           // Pad
+	offset++
+	copy(bindBody[offset:offset+16], kmsUUID[:])                   // AbstractSyntaxUUID
+	offset += 16
+	binary.LittleEndian.PutUint32(bindBody[offset:offset+4], 1)    // AbstractSyntaxVer
+	offset += 4
+	copy(bindBody[offset:offset+16], UUIDTime[:])                  // TransferSyntaxUUID
+	offset += 16
+	binary.LittleEndian.PutUint32(bindBody[offset:offset+4], 1)    // TransferSyntaxVer
+	offset += 4
 
-	pduData := bindBody.Bytes()
+	pduData := bindBody[:offset]
 
 	// Build full packet.
-	header := MSRPCHeader{
-		VerMajor:       5,
-		VerMinor:       0,
-		Type:           PacketTypeBind,
-		Flags:          FlagFirstFrag | FlagLastFrag | FlagConcMpx,
-		Representation: 0x10,
-		FragLen:        uint16(MSRPCHeaderSize + len(pduData)),
-		AuthLen:        0,
-		CallID:         callID,
-	}
-
-	var buf bytes.Buffer
-	binary.Write(&buf, binary.LittleEndian, &header)
-	buf.Write(pduData)
-	return buf.Bytes()
+	totalLen := MSRPCHeaderSize + len(pduData)
+	resp := make([]byte, totalLen)
+	offset = 0
+	resp[offset] = 5                                               // VerMajor
+	offset++
+	resp[offset] = 0                                               // VerMinor
+	offset++
+	resp[offset] = PacketTypeBind
+	offset++
+	resp[offset] = FlagFirstFrag | FlagLastFrag | FlagConcMpx
+	offset++
+	binary.LittleEndian.PutUint32(resp[offset:offset+4], 0x10)     // Representation
+	offset += 4
+	binary.LittleEndian.PutUint16(resp[offset:offset+2], uint16(totalLen)) // FragLen
+	offset += 2
+	binary.LittleEndian.PutUint16(resp[offset:offset+2], 0)        // AuthLen
+	offset += 2
+	binary.LittleEndian.PutUint32(resp[offset:offset+4], callID)   // CallID
+	copy(resp[offset:], pduData)
+	return resp
 }
 
 // BuildRPCRequest creates an RPC REQUEST packet wrapping the given KMS data.
 func BuildRPCRequest(kmsData []byte, callID uint32) []byte {
-	header := MSRPCRequestHeader{
-		MSRPCHeader: MSRPCHeader{
-			VerMajor:       5,
-			VerMinor:       0,
-			Type:           PacketTypeRequest,
-			Flags:          FlagFirstFrag | FlagLastFrag,
-			Representation: 0x10,
-			FragLen:        uint16(MSRPCRequestHeaderSize + len(kmsData)),
-			AuthLen:        0,
-			CallID:         callID,
-		},
-		AllocHint: uint32(len(kmsData)),
-		CtxID:     0,
-		OpNum:     0,
-	}
-
-	var buf bytes.Buffer
-	binary.Write(&buf, binary.LittleEndian, &header)
-	buf.Write(kmsData)
-	return buf.Bytes()
+	totalLen := MSRPCRequestHeaderSize + len(kmsData)
+	resp := make([]byte, totalLen)
+	offset := 0
+	resp[offset] = 5                                               // VerMajor
+	offset++
+	resp[offset] = 0                                               // VerMinor
+	offset++
+	resp[offset] = PacketTypeRequest
+	offset++
+	resp[offset] = FlagFirstFrag | FlagLastFrag
+	offset++
+	binary.LittleEndian.PutUint32(resp[offset:offset+4], 0x10)     // Representation
+	offset += 4
+	binary.LittleEndian.PutUint16(resp[offset:offset+2], uint16(totalLen)) // FragLen
+	offset += 2
+	binary.LittleEndian.PutUint16(resp[offset:offset+2], 0)        // AuthLen
+	offset += 2
+	binary.LittleEndian.PutUint32(resp[offset:offset+4], callID)   // CallID
+	offset += 4
+	binary.LittleEndian.PutUint32(resp[offset:offset+4], uint32(len(kmsData))) // AllocHint
+	offset += 4
+	binary.LittleEndian.PutUint16(resp[offset:offset+2], 0)        // CtxID
+	offset += 2
+	binary.LittleEndian.PutUint16(resp[offset:offset+2], 0)        // OpNum
+	copy(resp[offset:], kmsData)
+	return resp
 }
