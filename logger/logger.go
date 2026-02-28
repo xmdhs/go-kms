@@ -39,7 +39,7 @@ func Init(level string) {
 		}
 
 		handler := slog.NewJSONHandler(os.Stdout, opts)
-		logger = slog.New(handler)
+		logger = slog.New(&warpSlogHandle{handler})
 	})
 }
 
@@ -49,6 +49,17 @@ func GetLogger() *slog.Logger {
 		Init("INFO")
 	}
 	return logger
+}
+
+type warpSlogHandle struct {
+	slog.Handler
+}
+
+func (w *warpSlogHandle) Handle(ctx context.Context, r slog.Record) error {
+	if requestID := RequestIDFromContext(ctx); requestID != 0 {
+		r.AddAttrs(slog.Int("req_id", requestID))
+	}
+	return w.Handler.Handle(ctx, r)
 }
 
 // WithRequestID returns a new context with the request ID attached.
@@ -66,17 +77,8 @@ func RequestIDFromContext(ctx context.Context) int {
 	return 0
 }
 
-// LoggerForContext returns a logger instance with request ID from context.
-func LoggerForContext(ctx context.Context) *slog.Logger {
-	base := GetLogger()
-	if requestID := RequestIDFromContext(ctx); requestID != 0 {
-		return base.With("request_id", requestID)
-	}
-	return base
-}
-
 // LogAttrs logs a message with slog.Attr attributes.
 func LogAttrs(ctx context.Context, level slog.Level, msg string, attrs ...slog.Attr) {
-	loggerForCtx := LoggerForContext(ctx)
-	loggerForCtx.LogAttrs(ctx, level, msg, attrs...)
+	log := GetLogger()
+	log.LogAttrs(ctx, level, msg, attrs...)
 }

@@ -398,8 +398,6 @@ func GetPadding(bodyLength int) int {
 
 // ServerLogic processes a KMS request and generates a response.
 func ServerLogic(ctx context.Context, kmsRequest *KMSRequest, config *ServerConfig) *KMSResponse {
-	log := logger.LoggerForContext(ctx)
-
 	// Activation threshold calculation.
 	minClients := kmsRequest.RequiredClientCount
 	requiredClients := minClients * 2
@@ -426,7 +424,7 @@ func ServerLogic(ctx context.Context, kmsRequest *KMSRequest, config *ServerConf
 		epid = config.EPID
 	}
 
-	log.LogAttrs(ctx, slog.LevelDebug, "Response",
+	logger.LogAttrs(ctx, slog.LevelDebug, "Response",
 		slog.Any("Machine Name", machineName(kmsRequest.MachineNameRaw)),
 		slog.Any("Client Machine ID	", kmsRequest.ClientMachineID),
 		slog.Any("Application ID", kmsRequest.ApplicationID),
