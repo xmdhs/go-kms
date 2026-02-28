@@ -6,8 +6,9 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
-	"go-kms/crypto"
-	"go-kms/logger"
+
+	"github.com/xmdhs/go-kms/crypto"
+	"github.com/xmdhs/go-kms/logger"
 )
 
 // HandleV4Request processes a KMS V4 request.

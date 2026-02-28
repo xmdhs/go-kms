@@ -5,12 +5,13 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
-	"go-kms/client"
-	"go-kms/kms"
-	"go-kms/logger"
-	"go-kms/server"
 	"os"
 	"strings"
+
+	"github.com/xmdhs/go-kms/client"
+	"github.com/xmdhs/go-kms/kms"
+	"github.com/xmdhs/go-kms/logger"
+	"github.com/xmdhs/go-kms/server"
 )
 
 func main() {
@@ -32,7 +33,7 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Println("go-kms: KMS Server/Client Emulator (Go port)")
+	fmt.Println("github.com/xmdhs/go-kms: KMS Server/Client Emulator (Go port)")
 	fmt.Println()
 	fmt.Println("Usage:")
 	fmt.Println("  go-kms server [options]    Start KMS server")

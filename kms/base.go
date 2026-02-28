@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/xml"
 	"fmt"
-	"go-kms/logger"
 	"log/slog"
 	"math/rand"
 	"slices"
@@ -16,6 +15,8 @@ import (
 	"sync"
 	"time"
 	"unicode/utf16"
+
+	"github.com/xmdhs/go-kms/logger"
 )
 
 // UUID represents a 16-byte UUID in KMS wire format (bytes_le).

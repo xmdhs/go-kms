@@ -5,12 +5,13 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
-	"go-kms/kms"
-	"go-kms/logger"
-	"go-kms/rpc"
 	"io"
 	"net"
 	"time"
+
+	"github.com/xmdhs/go-kms/kms"
+	"github.com/xmdhs/go-kms/logger"
+	"github.com/xmdhs/go-kms/rpc"
 
 	r "math/rand/v2"
 )

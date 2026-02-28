@@ -7,16 +7,17 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
-	"go-kms/crypto"
-	"go-kms/kms"
-	"go-kms/logger"
-	"go-kms/rpc"
-	"go-kms/server"
 	"math/rand"
 	"net"
 	"strings"
 	"time"
 	"unicode/utf16"
+
+	"github.com/xmdhs/go-kms/crypto"
+	"github.com/xmdhs/go-kms/kms"
+	"github.com/xmdhs/go-kms/logger"
+	"github.com/xmdhs/go-kms/rpc"
+	"github.com/xmdhs/go-kms/server"
 )
 
 // ClientConfig holds client configuration.
