@@ -1,13 +1,14 @@
 package main
 
 import (
+	"context"
 	"encoding/hex"
 	"flag"
 	"fmt"
 	"go-kms/client"
 	"go-kms/kms"
+	"go-kms/logger"
 	"go-kms/server"
-	"log"
 	"os"
 	"strings"
 )
@@ -73,13 +74,20 @@ func runServer(args []string) {
 	} else {
 		hwidBytes, err := hex.DecodeString(hwidStr)
 		if err != nil || len(hwidBytes) != 8 {
-			log.Fatalf("Invalid HWID: %s (must be 16 hex characters)", *hwid)
+			logger.Error(context.Background(), "Invalid HWID", "hwid", *hwid, "error", "must be 16 hex characters")
+			os.Exit(1)
 		}
 		config.HWID = hwidBytes
 	}
 
+	// Initialize logger.
+	logger.Init(config.LogLevel)
+
 	srv := server.NewKMSServer(config)
-	log.Fatal(srv.ListenAndServe())
+	if err := srv.ListenAndServe(); err != nil {
+		logger.Error(context.Background(), "Server error", "error", err)
+		os.Exit(1)
+	}
 }
 
 func runClient(args []string) {
@@ -108,7 +116,11 @@ func runClient(args []string) {
 	config.CMID = *cmid
 	config.Machine = *name
 
+	// Initialize logger.
+	logger.Init("INFO")
+
 	if err := client.Run(config); err != nil {
-		log.Fatalf("Client error: %v", err)
+		logger.Error(context.Background(), "Client error", "error", err)
+		os.Exit(1)
 	}
 }

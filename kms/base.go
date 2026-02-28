@@ -1,12 +1,14 @@
 package kms
 
 import (
+	"context"
 	_ "embed"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/xml"
 	"fmt"
-	"log"
+	"go-kms/logger"
+	"log/slog"
 	"math/rand"
 	"slices"
 	"strconv"
@@ -304,6 +306,7 @@ type ServerConfig struct {
 	HWID        []byte
 	SQLite      bool
 	LogLevel    string
+	Logger      *slog.Logger
 }
 
 func DefaultServerConfig() *ServerConfig {
@@ -315,7 +318,7 @@ func DefaultServerConfig() *ServerConfig {
 		Activation: 120,
 		Renewal:    10080,
 		HWID:       hwid,
-		LogLevel:   "ERROR",
+		LogLevel:   "DEBUG",
 	}
 }
 
@@ -325,14 +328,15 @@ func GetPadding(bodyLength int) int {
 }
 
 // ServerLogic processes a KMS request and generates a response.
-func ServerLogic(kmsRequest *KMSRequest, config *ServerConfig) *KMSResponse {
-	log.Printf("Machine Name: %s", kmsRequest.MachineName())
-	log.Printf("Client Machine ID: %s", kmsRequest.ClientMachineID)
-	log.Printf("Application ID: %s", kmsRequest.ApplicationID)
-	log.Printf("SKU ID: %s", kmsRequest.SKUID)
-	log.Printf("KMS Counted ID: %s", kmsRequest.KMSCountedID)
-	log.Printf("License Status: %s", LicenseStates[kmsRequest.LicenseStatus])
-	log.Printf("Request Time: %s", FileTimeToTime(int64(kmsRequest.RequestTime)))
+func ServerLogic(ctx context.Context, kmsRequest *KMSRequest, config *ServerConfig) *KMSResponse {
+	log := logger.LoggerForContext(ctx)
+	log.Debug("Machine Name: " + kmsRequest.MachineName())
+	log.Debug("Client Machine ID: " + kmsRequest.ClientMachineID.String())
+	log.Debug("Application ID: " + kmsRequest.ApplicationID.String())
+	log.Debug("SKU ID: " + kmsRequest.SKUID.String())
+	log.Debug("KMS Counted ID: " + kmsRequest.KMSCountedID.String())
+	log.Debug("License Status: " + LicenseStates[kmsRequest.LicenseStatus])
+	log.Debug("Request Time: " + FileTimeToTime(int64(kmsRequest.RequestTime)).String())
 
 	// Activation threshold calculation.
 	minClients := kmsRequest.RequiredClientCount
@@ -361,7 +365,7 @@ func ServerLogic(kmsRequest *KMSRequest, config *ServerConfig) *KMSResponse {
 		epidUTF16 = EncodeUTF16LE(config.EPID)
 	}
 
-	log.Printf("Server ePID: %s", DecodeUTF16LE(epidUTF16))
+	log.Debug("Server ePID: " + DecodeUTF16LE(epidUTF16))
 
 	response := &KMSResponse{
 		VersionMinor:         kmsRequest.VersionMinor,
@@ -404,24 +408,24 @@ func DecodeUTF16LE(b []byte) string {
 }
 
 // GenerateKMSResponseData dispatches to the appropriate version handler.
-func GenerateKMSResponseData(data []byte, config *ServerConfig) ([]byte, error) {
+func GenerateKMSResponseData(ctx context.Context, data []byte, config *ServerConfig) ([]byte, error) {
 	header, err := ParseGenericRequestHeader(data)
 	if err != nil {
 		return nil, err
 	}
 
 	version := header.VersionMajor
-	log.Printf("Received V%d request on %s.", version, time.Now().Format("Mon Jan 02 15:04:05 2006"))
+	logger.Debug(ctx, "Received request", "version", version)
 
 	switch version {
 	case 4:
-		return HandleV4Request(data, config)
+		return HandleV4Request(ctx, data, config)
 	case 5:
-		return HandleV5Request(data, config)
+		return HandleV5Request(ctx, data, config)
 	case 6:
-		return HandleV6Request(data, config)
+		return HandleV6Request(ctx, data, config)
 	default:
-		log.Printf("Unhandled KMS version V%d.", version)
+		logger.Warn(ctx, "Unhandled KMS version", "version", version)
 		return HandleUnknownRequest()
 	}
 }

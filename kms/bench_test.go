@@ -1,6 +1,7 @@
 package kms
 
 import (
+	"context"
 	"testing"
 	"time"
 )
@@ -150,7 +151,7 @@ func BenchmarkServerLogic(b *testing.B) {
 	config := DefaultServerConfig()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		ServerLogic(req, config)
+		ServerLogic(context.Background(), req, config)
 	}
 }
 
@@ -205,7 +206,7 @@ func BenchmarkV6Cycle(b *testing.B) {
 		// Marshal request
 		_ = req.Marshal()
 		// Process through ServerLogic
-		resp := ServerLogic(req, config)
+		resp := ServerLogic(context.Background(), req, config)
 		// Marshal response
 		_ = resp.Marshal()
 	}

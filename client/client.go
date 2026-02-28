@@ -2,14 +2,16 @@ package client
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"go-kms/crypto"
 	"go-kms/kms"
+	"go-kms/logger"
 	"go-kms/rpc"
 	"go-kms/server"
-	"log"
 	"math/rand"
 	"net"
 	"strings"
@@ -103,13 +105,13 @@ func Run(config *ClientConfig) error {
 		machine = randomMachineName()
 	}
 
-	log.Printf("Connecting to %s:%d", config.IP, config.Port)
+	logger.Info(context.Background(), "Connecting to KMS server", "address", fmt.Sprintf("%s:%d", config.IP, config.Port))
 	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", config.IP, config.Port), 10*time.Second)
 	if err != nil {
 		return fmt.Errorf("connection failed: %w", err)
 	}
 	defer conn.Close()
-	log.Printf("Connection successful")
+	logger.Info(context.Background(), "Connection successful")
 
 	// Send RPC BIND.
 	bindRequest := rpc.BuildBindRequest(1)
@@ -130,7 +132,7 @@ func Run(config *ClientConfig) error {
 	if bindAckHeader.Type != rpc.PacketTypeBindAck {
 		return fmt.Errorf("expected bind ack, got type 0x%02x", bindAckHeader.Type)
 	}
-	log.Printf("RPC bind acknowledged")
+	logger.Debug(context.Background(), "RPC bind acknowledged")
 
 	// Build KMS request.
 	kmsRequestData, err := buildKMSRequest(product, cmid, machine)
@@ -382,21 +384,7 @@ func parseV5V6Response(data []byte, isV6 bool) error {
 		hwidOffset := respLen + 16 + 32 // keys(16) + hash(32)
 		if len(decrypted) >= hwidOffset+8 {
 			hwid := decrypted[hwidOffset : hwidOffset+8]
-			log.Printf("  HWID: %X", hwid)
-		}
-	} else {
-		// V5 has additional fields: keys(16) + hash(32)
-		// Verify hash.
-		if len(decrypted) > respLen+16 {
-			randomKeys := decrypted[respLen : respLen+16]
-			hashInResp := decrypted[respLen+16 : respLen+48]
-			_ = randomKeys
-
-			// The hash should be SHA256 of the randomSalt used by server.
-			// We can't verify without knowing the randomSalt, but we can check format.
-			if len(hashInResp) == 32 {
-				log.Printf("V5 SHA256 hash present (%d bytes)", len(hashInResp))
-			}
+			logger.Debug(context.Background(), "HWID", "hwid", hex.EncodeToString(hwid))
 		}
 	}
 
@@ -405,13 +393,13 @@ func parseV5V6Response(data []byte, isV6 bool) error {
 
 func printResponse(resp *kms.KMSResponse) {
 	epid := kms.DecodeUTF16LE(resp.KMSEpid)
-	log.Printf("=== KMS Response ===")
-	log.Printf("  ePID: %s", epid)
-	log.Printf("  Client Machine ID: %s", resp.ClientMachineID)
-	log.Printf("  Response Time: %s", kms.FileTimeToTime(int64(resp.ResponseTime)))
-	log.Printf("  Current Client Count: %d", resp.CurrentClientCount)
-	log.Printf("  VL Activation Interval: %d minutes", resp.VLActivationInterval)
-	log.Printf("  VL Renewal Interval: %d minutes", resp.VLRenewalInterval)
+	logger.Info(context.Background(), "=== KMS Response ===")
+	logger.Info(context.Background(), "  ePID: "+epid)
+	logger.Info(context.Background(), "  Client Machine ID: "+resp.ClientMachineID.String())
+	logger.Info(context.Background(), "  Response Time: "+kms.FileTimeToTime(int64(resp.ResponseTime)).String())
+	logger.Info(context.Background(), "  Current Client Count: "+fmt.Sprintf("%d", resp.CurrentClientCount))
+	logger.Info(context.Background(), "  VL Activation Interval: "+fmt.Sprintf("%d minutes", resp.VLActivationInterval))
+	logger.Info(context.Background(), "  VL Renewal Interval: "+fmt.Sprintf("%d minutes", resp.VLRenewalInterval))
 }
 
 func randomMachineName() string {

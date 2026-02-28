@@ -2,15 +2,16 @@ package kms
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
 	"go-kms/crypto"
-	"log"
+	"go-kms/logger"
 )
 
 // HandleV4Request processes a KMS V4 request.
-func HandleV4Request(data []byte, config *ServerConfig) ([]byte, error) {
+func HandleV4Request(ctx context.Context, data []byte, config *ServerConfig) ([]byte, error) {
 	// Parse V4 request: bodyLength1(4) + bodyLength2(4) + kmsRequest + hash(16) + padding
 	if len(data) < 8 {
 		return nil, fmt.Errorf("V4 request too short")
@@ -36,7 +37,7 @@ func HandleV4Request(data []byte, config *ServerConfig) ([]byte, error) {
 		return nil, fmt.Errorf("failed to parse KMS request: %w", err)
 	}
 
-	response := ServerLogic(kmsRequest, config)
+	response := ServerLogic(ctx, kmsRequest, config)
 	responseBytes := response.Marshal()
 
 	// Generate V4 hash.
@@ -60,21 +61,21 @@ func HandleV4Request(data []byte, config *ServerConfig) ([]byte, error) {
 	offset += len(theHash)
 	copy(resp[offset:], padding)
 
-	log.Printf("KMS V4 Response generated")
+	logger.Debug(ctx, "KMS V4 response generated")
 	return resp, nil
 }
 
 // HandleV5Request processes a KMS V5 request.
-func HandleV5Request(data []byte, config *ServerConfig) ([]byte, error) {
-	return handleV5V6Request(data, config, false)
+func HandleV5Request(ctx context.Context, data []byte, config *ServerConfig) ([]byte, error) {
+	return handleV5V6Request(ctx, data, config, false)
 }
 
 // HandleV6Request processes a KMS V6 request.
-func HandleV6Request(data []byte, config *ServerConfig) ([]byte, error) {
-	return handleV5V6Request(data, config, true)
+func HandleV6Request(ctx context.Context, data []byte, config *ServerConfig) ([]byte, error) {
+	return handleV5V6Request(ctx, data, config, true)
 }
 
-func handleV5V6Request(data []byte, config *ServerConfig, isV6 bool) ([]byte, error) {
+func handleV5V6Request(ctx context.Context, data []byte, config *ServerConfig, isV6 bool) ([]byte, error) {
 	// Parse request header.
 	if len(data) < 12 {
 		return nil, fmt.Errorf("V5/V6 request too short")
@@ -125,7 +126,7 @@ func handleV5V6Request(data []byte, config *ServerConfig, isV6 bool) ([]byte, er
 		return nil, fmt.Errorf("failed to parse KMS request: %w", err)
 	}
 
-	response := ServerLogic(kmsRequest, config)
+	response := ServerLogic(ctx, kmsRequest, config)
 	responseBytes := response.Marshal()
 
 	// Encrypt response.
@@ -213,7 +214,7 @@ func handleV5V6Request(data []byte, config *ServerConfig, isV6 bool) ([]byte, er
 	if isV6 {
 		ver = 6
 	}
-	log.Printf("KMS V%d Response generated", ver)
+	logger.Debug(ctx, "KMS response generated", "version", ver)
 	return buildV5V6Response(versionMinor, versionMajor, salt, encryptedResp), nil
 }
 
