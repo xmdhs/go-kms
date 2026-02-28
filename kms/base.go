@@ -153,9 +153,12 @@ type KMSRequest struct {
 	MachineNameRaw          []byte // UTF-16LE encoded, padded to 126 bytes total
 }
 
-type machineName []byte
+type MachineName struct {
+	MachineNameRaw []byte
+}
 
-func (raw machineName) String() string {
+func (r MachineName) String() string {
+	raw := r.MachineNameRaw
 	for i := 0; i < len(raw)-1; i += 2 {
 		if raw[i] == 0 && raw[i+1] == 0 {
 			raw = raw[:i]
@@ -425,8 +428,8 @@ func ServerLogic(ctx context.Context, kmsRequest *KMSRequest, config *ServerConf
 	}
 
 	logger.LogAttrs(ctx, slog.LevelDebug, "Response",
-		slog.Any("Machine Name", machineName(kmsRequest.MachineNameRaw)),
-		slog.Any("Client Machine ID	", kmsRequest.ClientMachineID),
+		slog.Any("Machine Name", MachineName{kmsRequest.MachineNameRaw}),
+		slog.Any("Client Machine ID", kmsRequest.ClientMachineID),
 		slog.Any("Application ID", kmsRequest.ApplicationID),
 		slog.Any("SKU ID", kmsRequest.SKUID),
 		slog.Any("KMS Counted ID", kmsRequest.KMSCountedID),
