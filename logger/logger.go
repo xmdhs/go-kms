@@ -75,26 +75,8 @@ func LoggerForContext(ctx context.Context) *slog.Logger {
 	return base
 }
 
-// Debug logs a debug message.
-func Debug(ctx context.Context, msg string, args ...any) {
+// LogAttrs logs a message with slog.Attr attributes.
+func LogAttrs(ctx context.Context, level slog.Level, msg string, attrs ...slog.Attr) {
 	loggerForCtx := LoggerForContext(ctx)
-	loggerForCtx.Debug(msg, args...)
-}
-
-// Info logs an info message.
-func Info(ctx context.Context, msg string, args ...any) {
-	loggerForCtx := LoggerForContext(ctx)
-	loggerForCtx.Info(msg, args...)
-}
-
-// Warn logs a warning message.
-func Warn(ctx context.Context, msg string, args ...any) {
-	loggerForCtx := LoggerForContext(ctx)
-	loggerForCtx.Warn(msg, args...)
-}
-
-// Error logs an error message.
-func Error(ctx context.Context, msg string, args ...any) {
-	loggerForCtx := LoggerForContext(ctx)
-	loggerForCtx.Error(msg, args...)
+	loggerForCtx.LogAttrs(ctx, level, msg, attrs...)
 }

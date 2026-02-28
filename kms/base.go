@@ -153,8 +153,9 @@ type KMSRequest struct {
 	MachineNameRaw          []byte // UTF-16LE encoded, padded to 126 bytes total
 }
 
-func (r *KMSRequest) MachineName() string {
-	raw := r.MachineNameRaw
+type machineName []byte
+
+func (raw machineName) String() string {
 	for i := 0; i < len(raw)-1; i += 2 {
 		if raw[i] == 0 && raw[i+1] == 0 {
 			raw = raw[:i]
@@ -398,13 +399,6 @@ func GetPadding(bodyLength int) int {
 // ServerLogic processes a KMS request and generates a response.
 func ServerLogic(ctx context.Context, kmsRequest *KMSRequest, config *ServerConfig) *KMSResponse {
 	log := logger.LoggerForContext(ctx)
-	log.Debug("Machine Name: " + kmsRequest.MachineName())
-	log.Debug("Client Machine ID: " + kmsRequest.ClientMachineID.String())
-	log.Debug("Application ID: " + kmsRequest.ApplicationID.String())
-	log.Debug("SKU ID: " + kmsRequest.SKUID.String())
-	log.Debug("KMS Counted ID: " + kmsRequest.KMSCountedID.String())
-	log.Debug("License Status: " + LicenseStates[kmsRequest.LicenseStatus])
-	log.Debug("Request Time: " + FileTimeToTime(int64(kmsRequest.RequestTime)).String())
 
 	// Activation threshold calculation.
 	minClients := kmsRequest.RequiredClientCount
@@ -432,7 +426,16 @@ func ServerLogic(ctx context.Context, kmsRequest *KMSRequest, config *ServerConf
 		epid = config.EPID
 	}
 
-	log.Debug("Server ePID: " + epid)
+	log.LogAttrs(ctx, slog.LevelDebug, "Response",
+		slog.Any("Machine Name", machineName(kmsRequest.MachineNameRaw)),
+		slog.Any("Client Machine ID	", kmsRequest.ClientMachineID),
+		slog.Any("Application ID", kmsRequest.ApplicationID),
+		slog.Any("SKU ID", kmsRequest.SKUID),
+		slog.Any("KMS Counted ID", kmsRequest.KMSCountedID),
+		slog.String("License Status", LicenseStates[kmsRequest.LicenseStatus]),
+		slog.Time("Request Time", FileTimeToTime(int64(kmsRequest.RequestTime))),
+		slog.String("Server ePID", epid),
+	)
 
 	response := &KMSResponse{
 		VersionMinor:         kmsRequest.VersionMinor,
@@ -482,7 +485,7 @@ func GenerateKMSResponseData(ctx context.Context, data []byte, config *ServerCon
 	}
 
 	version := header.VersionMajor
-	logger.Debug(ctx, "Received request", "version", version)
+	logger.LogAttrs(ctx, slog.LevelDebug, "Received request", slog.Uint64("version", uint64(version)))
 
 	switch version {
 	case 4:
@@ -492,7 +495,7 @@ func GenerateKMSResponseData(ctx context.Context, data []byte, config *ServerCon
 	case 6:
 		return HandleV6Request(ctx, data, config)
 	default:
-		logger.Warn(ctx, "Unhandled KMS version", "version", version)
+		logger.LogAttrs(ctx, slog.LevelWarn, "Unhandled KMS version", slog.Uint64("version", uint64(version)))
 		return HandleUnknownRequest()
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 
@@ -75,7 +76,7 @@ func runServer(args []string) {
 	} else {
 		hwidBytes, err := hex.DecodeString(hwidStr)
 		if err != nil || len(hwidBytes) != 8 {
-			logger.Error(context.Background(), "Invalid HWID", "hwid", *hwid, "error", "must be 16 hex characters")
+			logger.LogAttrs(context.Background(), slog.LevelError, "Invalid HWID", slog.String("hwid", *hwid), slog.String("error", "must be 16 hex characters"))
 			os.Exit(1)
 		}
 		config.HWID = hwidBytes
@@ -86,7 +87,7 @@ func runServer(args []string) {
 
 	srv := server.NewKMSServer(config)
 	if err := srv.ListenAndServe(); err != nil {
-		logger.Error(context.Background(), "Server error", "error", err)
+		logger.LogAttrs(context.Background(), slog.LevelError, "Server error", slog.Any("error", err))
 		os.Exit(1)
 	}
 }
@@ -121,7 +122,7 @@ func runClient(args []string) {
 	logger.Init("INFO")
 
 	if err := client.Run(config); err != nil {
-		logger.Error(context.Background(), "Client error", "error", err)
+		logger.LogAttrs(context.Background(), slog.LevelError, "Client error", slog.Any("error", err))
 		os.Exit(1)
 	}
 }

@@ -2,7 +2,6 @@ package client
 
 import (
 	"bytes"
-	"context"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
@@ -15,7 +14,6 @@ import (
 
 	"github.com/xmdhs/go-kms/crypto"
 	"github.com/xmdhs/go-kms/kms"
-	"github.com/xmdhs/go-kms/logger"
 	"github.com/xmdhs/go-kms/rpc"
 	"github.com/xmdhs/go-kms/server"
 )
@@ -106,13 +104,13 @@ func Run(config *ClientConfig) error {
 		machine = randomMachineName()
 	}
 
-	logger.Info(context.Background(), "Connecting to KMS server", "address", fmt.Sprintf("%s:%d", config.IP, config.Port))
+	fmt.Printf("Connecting to KMS server: %s:%d\n", config.IP, config.Port)
 	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", config.IP, config.Port), 10*time.Second)
 	if err != nil {
 		return fmt.Errorf("connection failed: %w", err)
 	}
 	defer conn.Close()
-	logger.Info(context.Background(), "Connection successful")
+	fmt.Println("Connection successful")
 
 	// Send RPC BIND.
 	bindRequest := rpc.BuildBindRequest(1)
@@ -133,7 +131,7 @@ func Run(config *ClientConfig) error {
 	if bindAckHeader.Type != rpc.PacketTypeBindAck {
 		return fmt.Errorf("expected bind ack, got type 0x%02x", bindAckHeader.Type)
 	}
-	logger.Debug(context.Background(), "RPC bind acknowledged")
+	fmt.Println("RPC bind acknowledged")
 
 	// Build KMS request.
 	kmsRequestData, err := buildKMSRequest(product, cmid, machine)
@@ -385,7 +383,7 @@ func parseV5V6Response(data []byte, isV6 bool) error {
 		hwidOffset := respLen + 16 + 32 // keys(16) + hash(32)
 		if len(decrypted) >= hwidOffset+8 {
 			hwid := decrypted[hwidOffset : hwidOffset+8]
-			logger.Debug(context.Background(), "HWID", "hwid", hex.EncodeToString(hwid))
+			fmt.Printf("HWID: %s\n", hex.EncodeToString(hwid))
 		}
 	}
 
@@ -394,13 +392,13 @@ func parseV5V6Response(data []byte, isV6 bool) error {
 
 func printResponse(resp *kms.KMSResponse) {
 	epid := kms.DecodeUTF16LE(resp.KMSEpid)
-	logger.Info(context.Background(), "=== KMS Response ===")
-	logger.Info(context.Background(), "  ePID: "+epid)
-	logger.Info(context.Background(), "  Client Machine ID: "+resp.ClientMachineID.String())
-	logger.Info(context.Background(), "  Response Time: "+kms.FileTimeToTime(int64(resp.ResponseTime)).String())
-	logger.Info(context.Background(), "  Current Client Count: "+fmt.Sprintf("%d", resp.CurrentClientCount))
-	logger.Info(context.Background(), "  VL Activation Interval: "+fmt.Sprintf("%d minutes", resp.VLActivationInterval))
-	logger.Info(context.Background(), "  VL Renewal Interval: "+fmt.Sprintf("%d minutes", resp.VLRenewalInterval))
+	fmt.Println("=== KMS Response ===")
+	fmt.Println("  ePID: " + epid)
+	fmt.Println("  Client Machine ID: " + resp.ClientMachineID.String())
+	fmt.Println("  Response Time: " + kms.FileTimeToTime(int64(resp.ResponseTime)).String())
+	fmt.Println("  Current Client Count: " + fmt.Sprintf("%d", resp.CurrentClientCount))
+	fmt.Println("  VL Activation Interval: " + fmt.Sprintf("%d minutes", resp.VLActivationInterval))
+	fmt.Println("  VL Renewal Interval: " + fmt.Sprintf("%d minutes", resp.VLRenewalInterval))
 }
 
 func randomMachineName() string {

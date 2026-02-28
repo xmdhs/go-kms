@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
+	"log/slog"
 
 	"github.com/xmdhs/go-kms/crypto"
 	"github.com/xmdhs/go-kms/logger"
@@ -61,7 +62,7 @@ func HandleV4Request(ctx context.Context, data []byte, config *ServerConfig) ([]
 	offset += len(theHash)
 	copy(resp[offset:], padding)
 
-	logger.Debug(ctx, "KMS V4 response generated")
+	logger.LogAttrs(ctx, slog.LevelDebug, "KMS V4 response generated")
 	return resp, nil
 }
 
@@ -200,7 +201,7 @@ func handleV5V6Request(ctx context.Context, data []byte, config *ServerConfig, i
 		return nil, fmt.Errorf("failed to encrypt V5 response: %w", err)
 	}
 
-	logger.Debug(ctx, "KMS V5 response generated")
+	logger.LogAttrs(ctx, slog.LevelDebug, "KMS V5 response generated")
 	return buildV5V6Response(versionMinor, versionMajor, salt, encryptedResp), nil
 }
 

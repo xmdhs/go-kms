@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"sync"
 	"time"
@@ -44,13 +45,13 @@ func (s *KMSServer) ListenAndServe() error {
 		return fmt.Errorf("failed to listen on %s: %w", addr, err)
 	}
 	s.listener = listener
-	logger.Info(context.Background(), "KMS Server listening", "address", addr)
-	logger.Info(context.Background(), "HWID", "hwid", hex.EncodeToString(s.Config.HWID))
+	logger.LogAttrs(context.Background(), slog.LevelInfo, "KMS Server listening", slog.String("address", addr))
+	logger.LogAttrs(context.Background(), slog.LevelInfo, "HWID", slog.String("hwid", hex.EncodeToString(s.Config.HWID)))
 
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
-			logger.Warn(context.Background(), "Failed to accept connection", "error", err)
+			logger.LogAttrs(context.Background(), slog.LevelWarn, "Failed to accept connection", slog.Any("error", err))
 			continue
 		}
 		go s.handleConnection(conn)
@@ -73,7 +74,7 @@ func (s *KMSServer) handleConnection(conn net.Conn) {
 	requestID := r.Int()
 	ctx := logger.WithRequestID(context.Background(), requestID)
 
-	logger.Info(ctx, "Connection accepted", "remote_addr", remoteAddr)
+	logger.LogAttrs(ctx, slog.LevelInfo, "Connection accepted", slog.String("remote_addr", remoteAddr))
 
 	// Reuse a pooled buffer for all reads on this connection.
 	bufp := connBufPool.Get().(*[]byte)
@@ -84,19 +85,19 @@ func (s *KMSServer) handleConnection(conn net.Conn) {
 		data, err := recvAllInto(conn, *bufp)
 		if err != nil {
 			if err != io.EOF {
-				logger.Warn(ctx, "Error reading from connection", "remote_addr", remoteAddr, "error", err)
+				logger.LogAttrs(ctx, slog.LevelWarn, "Error reading from connection", slog.String("remote_addr", remoteAddr), slog.Any("error", err))
 			}
 			break
 		}
 		if len(data) == 0 {
-			logger.Debug(ctx, "No data received", "remote_addr", remoteAddr)
+			logger.LogAttrs(ctx, slog.LevelDebug, "No data received", slog.String("remote_addr", remoteAddr))
 			break
 		}
 
 		// Parse RPC header to determine packet type.
 		header, err := rpc.ParseMSRPCHeader(data)
 		if err != nil {
-			logger.Warn(ctx, "Failed to parse RPC header", "error", err)
+			logger.LogAttrs(ctx, slog.LevelWarn, "Failed to parse RPC header", slog.Any("error", err))
 			break
 		}
 
@@ -104,39 +105,39 @@ func (s *KMSServer) handleConnection(conn net.Conn) {
 
 		switch header.Type {
 		case rpc.PacketTypeBind:
-			logger.Debug(ctx, "RPC bind request received", "remote_addr", remoteAddr)
+			logger.LogAttrs(ctx, slog.LevelDebug, "RPC bind request received", slog.String("remote_addr", remoteAddr))
 			response, err = rpc.BuildBindAckResponse(data, s.Config.Port, header.CallID)
 			if err != nil {
-				logger.Error(ctx, "Failed to build bind ack", "error", err)
+				logger.LogAttrs(ctx, slog.LevelError, "Failed to build bind ack", slog.Any("error", err))
 				break
 			}
-			logger.Debug(ctx, "RPC bind acknowledged")
+			logger.LogAttrs(ctx, slog.LevelDebug, "RPC bind acknowledged")
 
 		case rpc.PacketTypeRequest:
-			logger.Info(ctx, "Activation request received", "remote_addr", remoteAddr)
+			logger.LogAttrs(ctx, slog.LevelInfo, "Activation request received", slog.String("remote_addr", remoteAddr))
 			reqHeader, err := rpc.ParseMSRPCRequestHeader(data)
 			if err != nil {
-				logger.Error(ctx, "Failed to parse request header", "error", err)
+				logger.LogAttrs(ctx, slog.LevelError, "Failed to parse request header", slog.Any("error", err))
 				break
 			}
 
 			pduData := reqHeader.PDUData(data)
 			if pduData == nil {
-				logger.Error(ctx, "Failed to extract PDU data")
+				logger.LogAttrs(ctx, slog.LevelError, "Failed to extract PDU data")
 				break
 			}
 
 			kmsResponseData, err := kms.GenerateKMSResponseData(ctx, pduData, s.Config)
 			if err != nil {
-				logger.Error(ctx, "Failed to generate KMS response", "error", err)
+				logger.LogAttrs(ctx, slog.LevelError, "Failed to generate KMS response", slog.Any("error", err))
 				break
 			}
 
 			response = rpc.BuildMSRPCResponse(reqHeader, kmsResponseData)
-			logger.Info(ctx, "Activation request responded")
+			logger.LogAttrs(ctx, slog.LevelInfo, "Activation request responded")
 
 		default:
-			logger.Warn(ctx, "Unknown RPC packet type", "type", fmt.Sprintf("0x%02x", header.Type))
+			logger.LogAttrs(ctx, slog.LevelWarn, "Unknown RPC packet type", slog.String("type", fmt.Sprintf("0x%02x", header.Type)))
 		}
 
 		if response == nil {
@@ -145,7 +146,7 @@ func (s *KMSServer) handleConnection(conn net.Conn) {
 
 		_, err = conn.Write(response)
 		if err != nil {
-			logger.Warn(ctx, "Error writing to connection", "remote_addr", remoteAddr, "error", err)
+			logger.LogAttrs(ctx, slog.LevelWarn, "Error writing to connection", slog.String("remote_addr", remoteAddr), slog.Any("error", err))
 			break
 		}
 
@@ -155,7 +156,7 @@ func (s *KMSServer) handleConnection(conn net.Conn) {
 		}
 	}
 
-	logger.Info(ctx, "Connection closed", "remote_addr", remoteAddr)
+	logger.LogAttrs(ctx, slog.LevelInfo, "Connection closed", slog.String("remote_addr", remoteAddr))
 }
 
 // recvAllInto reads a complete RPC message into the provided buffer (zero-allocation read).
