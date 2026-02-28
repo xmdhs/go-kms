@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/xmdhs/go-kms/kms"
@@ -20,6 +21,16 @@ import (
 type KMSServer struct {
 	Config   *kms.ServerConfig
 	listener net.Listener
+}
+
+// maxFragLen is the maximum allowed RPC fragment length to prevent DoS via oversized allocations.
+const maxFragLen = 8192
+
+var connBufPool = sync.Pool{
+	New: func() any {
+		buf := make([]byte, maxFragLen)
+		return &buf
+	},
 }
 
 func NewKMSServer(config *kms.ServerConfig) *KMSServer {
@@ -64,9 +75,13 @@ func (s *KMSServer) handleConnection(conn net.Conn) {
 
 	logger.Info(ctx, "Connection accepted", "remote_addr", remoteAddr)
 
+	// Reuse a pooled buffer for all reads on this connection.
+	bufp := connBufPool.Get().(*[]byte)
+	defer connBufPool.Put(bufp)
+
 	for {
 		// Read a complete RPC message using frag_len from the header.
-		data, err := RecvAll(conn)
+		data, err := recvAllInto(conn, *bufp)
 		if err != nil {
 			if err != io.EOF {
 				logger.Warn(ctx, "Error reading from connection", "remote_addr", remoteAddr, "error", err)
@@ -143,6 +158,26 @@ func (s *KMSServer) handleConnection(conn net.Conn) {
 	logger.Info(ctx, "Connection closed", "remote_addr", remoteAddr)
 }
 
+// recvAllInto reads a complete RPC message into the provided buffer (zero-allocation read).
+func recvAllInto(conn net.Conn, buf []byte) ([]byte, error) {
+	if _, err := io.ReadFull(conn, buf[:rpc.MSRPCHeaderSize]); err != nil {
+		return nil, err
+	}
+
+	fragLen := binary.LittleEndian.Uint16(buf[8:10])
+	if fragLen > maxFragLen {
+		return nil, fmt.Errorf("fragment length %d exceeds maximum allowed %d", fragLen, maxFragLen)
+	}
+	if fragLen <= rpc.MSRPCHeaderSize {
+		return buf[:rpc.MSRPCHeaderSize], nil
+	}
+
+	if _, err := io.ReadFull(conn, buf[rpc.MSRPCHeaderSize:fragLen]); err != nil {
+		return nil, err
+	}
+	return buf[:fragLen], nil
+}
+
 // RecvAll reads from conn until we have a complete RPC message.
 func RecvAll(conn net.Conn) ([]byte, error) {
 	// First read the header to get fragment length.
@@ -152,14 +187,18 @@ func RecvAll(conn net.Conn) ([]byte, error) {
 	}
 
 	fragLen := binary.LittleEndian.Uint16(headerBuf[8:10])
+	if fragLen > maxFragLen {
+		return nil, fmt.Errorf("fragment length %d exceeds maximum allowed %d", fragLen, maxFragLen)
+	}
 	if fragLen <= rpc.MSRPCHeaderSize {
 		return headerBuf, nil
 	}
 
-	remaining := make([]byte, int(fragLen)-rpc.MSRPCHeaderSize)
-	if _, err := io.ReadFull(conn, remaining); err != nil {
+	// Single allocation for the full message.
+	buf := make([]byte, fragLen)
+	copy(buf, headerBuf)
+	if _, err := io.ReadFull(conn, buf[rpc.MSRPCHeaderSize:]); err != nil {
 		return nil, err
 	}
-
-	return append(headerBuf, remaining...), nil
+	return buf, nil
 }

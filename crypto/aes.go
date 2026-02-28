@@ -48,11 +48,17 @@ var V6Key = []byte{0xA9, 0x4A, 0x41, 0x95, 0xE2, 0x01, 0x43, 0x2D, 0x9B, 0xCB, 0
 // V4Key is the custom 160-bit key used for KMS protocol version 4.
 var V4Key = []byte{0x05, 0x3D, 0x83, 0x07, 0xF9, 0xE5, 0xF0, 0x88, 0xEB, 0x5E, 0xA6, 0x68, 0x6C, 0xF0, 0x37, 0xC7, 0xE4, 0xEF, 0xD2, 0xD6}
 
-// Precomputed expanded keys for performance (using sync.OnceValue for lazy initialization)
+// Precomputed round keys for performance (using sync.OnceValue for lazy initialization)
 var (
-	v5ExpandedKey = sync.OnceValue(func() []byte { return expandKey(V5Key, 16, 176) })
-	v6ExpandedKey = sync.OnceValue(func() []byte { return expandKey(V6Key, 16, 176) })
-	v4ExpandedKey = sync.OnceValue(func() []byte { return expandKey(V4Key, 20, 192) })
+	v5RoundKeys = sync.OnceValue(func() [][16]byte {
+		return buildRoundKeys(expandKey(V5Key, 16, 176), 10)
+	})
+	v6RoundKeys = sync.OnceValue(func() [][16]byte {
+		return buildRoundKeys(expandKey(V6Key, 16, 176), 10)
+	})
+	v4RoundKeys = sync.OnceValue(func() [][16]byte {
+		return buildRoundKeys(expandKey(V4Key, 20, 192), 11)
+	})
 )
 
 // KMSEncryptCBC encrypts KMS V5/V6 payload data using protocol-defined AES-CBC.
@@ -92,12 +98,19 @@ func KMSDecryptCBC(data, iv []byte, v6 bool) ([]byte, error) {
 	return plaintext, nil
 }
 
-// v6XorPatches are the XOR patches applied during V6 AES rounds.
+// v6RoundPatch returns the XOR patch applied during V6 AES rounds.
 // Round 4: state[0] ^= 0x73, Round 6: state[0] ^= 0x09, Round 8: state[0] ^= 0xE4
-var v6Patches = map[int]byte{
-	4: 0x73,
-	6: 0x09,
-	8: 0xE4,
+func v6RoundPatch(round int) byte {
+	switch round {
+	case 4:
+		return 0x73
+	case 6:
+		return 0x09
+	case 8:
+		return 0xE4
+	default:
+		return 0
+	}
 }
 
 // aesEncryptCBCV6 implements AES-CBC encryption with V6 round modifications.
@@ -108,17 +121,18 @@ func aesEncryptCBCV6(data, iv []byte) ([]byte, error) {
 		return nil, fmt.Errorf("plaintext is not a multiple of block size")
 	}
 	ciphertext := make([]byte, len(data))
-	prevBlock := make([]byte, 16)
-	copy(prevBlock, iv)
+	var prevBlock [16]byte
+	copy(prevBlock[:], iv)
+	var block [16]byte
+	var encrypted [16]byte
 
 	for i := 0; i < len(data); i += 16 {
-		block := make([]byte, 16)
 		for j := range 16 {
 			block[j] = data[i+j] ^ prevBlock[j]
 		}
-		encrypted := aesEncryptBlockV6(block)
-		copy(ciphertext[i:], encrypted)
-		copy(prevBlock, encrypted)
+		aesEncryptBlockV6InPlace(encrypted[:], block[:])
+		copy(ciphertext[i:], encrypted[:])
+		copy(prevBlock[:], encrypted[:])
 	}
 	return ciphertext, nil
 }
@@ -128,15 +142,16 @@ func aesDecryptCBCV6(data, iv []byte) ([]byte, error) {
 		return nil, fmt.Errorf("ciphertext is not a multiple of block size")
 	}
 	plaintext := make([]byte, len(data))
-	prevBlock := make([]byte, 16)
-	copy(prevBlock, iv)
+	var prevBlock [16]byte
+	copy(prevBlock[:], iv)
+	var decrypted [16]byte
 
 	for i := 0; i < len(data); i += 16 {
-		decrypted := aesDecryptBlockV6(data[i:i+16])
+		aesDecryptBlockV6InPlace(decrypted[:], data[i:i+16])
 		for j := range 16 {
 			plaintext[i+j] = decrypted[j] ^ prevBlock[j]
 		}
-		copy(prevBlock, data[i:i+16])
+		copy(prevBlock[:], data[i:i+16])
 	}
 	return plaintext, nil
 }
@@ -144,7 +159,9 @@ func aesDecryptCBCV6(data, iv []byte) ([]byte, error) {
 // V4Hash computes the KMS V4 hash (custom AES-CMAC variant with 160-bit key).
 func V4Hash(message []byte) []byte {
 	messageSize := len(message)
-	hashBuffer := make([]byte, 16)
+	var hashBuffer [16]byte
+	var encrypted [16]byte
+	roundKeys := v4RoundKeys()
 
 	// Number of full 16-byte blocks.
 	j := messageSize >> 4
@@ -153,14 +170,16 @@ func V4Hash(message []byte) []byte {
 
 	// Process full blocks.
 	for i := range j {
+		base := i * 16
 		for b := range 16 {
-			hashBuffer[b] ^= message[i*16+b]
+			hashBuffer[b] ^= message[base+b]
 		}
-		hashBuffer = aesEncryptBlockCustom(hashBuffer, 20)
+		aesEncryptBlockCustomInPlace(encrypted[:], hashBuffer[:], roundKeys, 11)
+		hashBuffer = encrypted
 	}
 
 	// Process last block with bit padding.
-	lastBlock := make([]byte, 16)
+	var lastBlock [16]byte
 	for i := range k {
 		lastBlock[i] = message[j*16+i]
 	}
@@ -169,9 +188,12 @@ func V4Hash(message []byte) []byte {
 	for b := range 16 {
 		hashBuffer[b] ^= lastBlock[b]
 	}
-	hashBuffer = aesEncryptBlockCustom(hashBuffer, 20)
+	aesEncryptBlockCustomInPlace(encrypted[:], hashBuffer[:], v4RoundKeys(), 11)
+	hashBuffer = encrypted
 
-	return hashBuffer
+	output := make([]byte, 16)
+	copy(output, hashBuffer[:])
+	return output
 }
 
 // RandomSalt generates a 16-byte random salt.
@@ -293,6 +315,36 @@ func galoisMult(a, b byte) byte {
 	return p
 }
 
+func buildRoundKeys(expandedKey []byte, rounds int) [][16]byte {
+	roundKeys := make([][16]byte, rounds+1)
+	for r := 0; r <= rounds; r++ {
+		offset := r * 16
+		for i := range 4 {
+			for j := range 4 {
+				roundKeys[r][j*4+i] = expandedKey[offset+i*4+j]
+			}
+		}
+	}
+	return roundKeys
+}
+
+func buildMulTable(mult byte) [256]byte {
+	var table [256]byte
+	for i := 0; i < 256; i++ {
+		table[i] = galoisMult(byte(i), mult)
+	}
+	return table
+}
+
+var (
+	mul2Table  = buildMulTable(2)
+	mul3Table  = buildMulTable(3)
+	mul9Table  = buildMulTable(9)
+	mul11Table = buildMulTable(11)
+	mul13Table = buildMulTable(13)
+	mul14Table = buildMulTable(14)
+)
+
 func expandKey(key []byte, size, expandedKeySize int) []byte {
 	expandedKey := make([]byte, expandedKeySize)
 	copy(expandedKey, key[:size])
@@ -300,12 +352,12 @@ func expandKey(key []byte, size, expandedKeySize int) []byte {
 	rconIteration := 1
 
 	for currentSize < expandedKeySize {
-		t := make([]byte, 4)
-		copy(t, expandedKey[currentSize-4:currentSize])
+		var t [4]byte
+		copy(t[:], expandedKey[currentSize-4:currentSize])
 
 		if currentSize%size == 0 {
 			// Rotate.
-			t = []byte{t[1], t[2], t[3], t[0]}
+			t[0], t[1], t[2], t[3] = t[1], t[2], t[3], t[0]
 			// SubBytes.
 			for i := range t {
 				t[i] = sbox[t[i]]
@@ -338,79 +390,49 @@ func subBytes(state []byte, inv bool) {
 }
 
 func shiftRows(state []byte, inv bool) {
-	for i := 1; i < 4; i++ {
-		row := []byte{state[i*4], state[i*4+1], state[i*4+2], state[i*4+3]}
-		for n := 0; n < i; n++ {
-			if inv {
-				row = []byte{row[3], row[0], row[1], row[2]}
-			} else {
-				row = []byte{row[1], row[2], row[3], row[0]}
-			}
-		}
-		copy(state[i*4:], row)
+	if inv {
+		state[4], state[5], state[6], state[7] = state[7], state[4], state[5], state[6]
+		state[8], state[9], state[10], state[11] = state[10], state[11], state[8], state[9]
+		state[12], state[13], state[14], state[15] = state[13], state[14], state[15], state[12]
+		return
 	}
+
+	state[4], state[5], state[6], state[7] = state[5], state[6], state[7], state[4]
+	state[8], state[9], state[10], state[11] = state[10], state[11], state[8], state[9]
+	state[12], state[13], state[14], state[15] = state[15], state[12], state[13], state[14]
 }
 
-func mixColumn(col []byte, inv bool) []byte {
-	var mult [4]byte
+func mixColumn(state []byte, i0, i1, i2, i3 int, inv bool) {
+	a0, a1, a2, a3 := state[i0], state[i1], state[i2], state[i3]
 	if inv {
-		mult = [4]byte{14, 9, 13, 11}
-	} else {
-		mult = [4]byte{2, 1, 1, 3}
+		state[i0] = mul14Table[a0] ^ mul9Table[a3] ^ mul13Table[a2] ^ mul11Table[a1]
+		state[i1] = mul14Table[a1] ^ mul9Table[a0] ^ mul13Table[a3] ^ mul11Table[a2]
+		state[i2] = mul14Table[a2] ^ mul9Table[a1] ^ mul13Table[a0] ^ mul11Table[a3]
+		state[i3] = mul14Table[a3] ^ mul9Table[a2] ^ mul13Table[a1] ^ mul11Table[a0]
+		return
 	}
-	cpy := make([]byte, 4)
-	copy(cpy, col)
-
-	col[0] = galoisMult(cpy[0], mult[0]) ^ galoisMult(cpy[3], mult[1]) ^ galoisMult(cpy[2], mult[2]) ^ galoisMult(cpy[1], mult[3])
-	col[1] = galoisMult(cpy[1], mult[0]) ^ galoisMult(cpy[0], mult[1]) ^ galoisMult(cpy[3], mult[2]) ^ galoisMult(cpy[2], mult[3])
-	col[2] = galoisMult(cpy[2], mult[0]) ^ galoisMult(cpy[1], mult[1]) ^ galoisMult(cpy[0], mult[2]) ^ galoisMult(cpy[3], mult[3])
-	col[3] = galoisMult(cpy[3], mult[0]) ^ galoisMult(cpy[2], mult[1]) ^ galoisMult(cpy[1], mult[2]) ^ galoisMult(cpy[0], mult[3])
-	return col
+	state[i0] = mul2Table[a0] ^ a3 ^ a2 ^ mul3Table[a1]
+	state[i1] = mul2Table[a1] ^ a0 ^ a3 ^ mul3Table[a2]
+	state[i2] = mul2Table[a2] ^ a1 ^ a0 ^ mul3Table[a3]
+	state[i3] = mul2Table[a3] ^ a2 ^ a1 ^ mul3Table[a0]
 }
 
 func mixColumns(state []byte, inv bool) {
-	for i := range 4 {
-		col := []byte{state[i], state[i+4], state[i+8], state[i+12]}
-		col = mixColumn(col, inv)
-		state[i] = col[0]
-		state[i+4] = col[1]
-		state[i+8] = col[2]
-		state[i+12] = col[3]
-	}
+	mixColumn(state, 0, 4, 8, 12, inv)
+	mixColumn(state, 1, 5, 9, 13, inv)
+	mixColumn(state, 2, 6, 10, 14, inv)
+	mixColumn(state, 3, 7, 11, 15, inv)
 }
 
-func addRoundKey(state, roundKey []byte) {
+func addRoundKey(state []byte, roundKey *[16]byte) {
 	for i := range 16 {
 		state[i] ^= roundKey[i]
 	}
 }
 
-func createRoundKey(expandedKey []byte, offset int) []byte {
-	roundKey := make([]byte, 16)
-	for i := range 4 {
-		for j := range 4 {
-			roundKey[j*4+i] = expandedKey[offset+i*4+j]
-		}
-	}
-	return roundKey
-}
-
-func aesEncryptBlockCustom(input []byte, keySize int) []byte {
-	var nbrRounds int
-	var expandedKey []byte
-	switch keySize {
-	case 16:
-		nbrRounds = 10
-		expandedKey = v5ExpandedKey()
-	case 20:
-		nbrRounds = 11 // V4 custom
-		expandedKey = v4ExpandedKey()
-	default:
-		panic(fmt.Sprintf("invalid key size: %d", keySize))
-	}
-
+func aesEncryptBlockCustomInPlace(dst, input []byte, roundKeys [][16]byte, nbrRounds int) {
 	// Map input to state (column-major).
-	state := make([]byte, 16)
+	var state [16]byte
 	for i := range 4 {
 		for j := range 4 {
 			state[i+j*4] = input[i*4+j]
@@ -418,146 +440,157 @@ func aesEncryptBlockCustom(input []byte, keySize int) []byte {
 	}
 
 	// Initial round key addition.
-	addRoundKey(state, createRoundKey(expandedKey, 0))
+	addRoundKey(state[:], &roundKeys[0])
 
 	// Main rounds.
 	for i := 1; i < nbrRounds; i++ {
-		subBytes(state, false)
-		shiftRows(state, false)
-		mixColumns(state, false)
-		addRoundKey(state, createRoundKey(expandedKey, 16*i))
+		subBytes(state[:], false)
+		shiftRows(state[:], false)
+		mixColumns(state[:], false)
+		addRoundKey(state[:], &roundKeys[i])
 	}
 
 	// Final round (no mixColumns).
-	subBytes(state, false)
-	shiftRows(state, false)
-	addRoundKey(state, createRoundKey(expandedKey, 16*nbrRounds))
+	subBytes(state[:], false)
+	shiftRows(state[:], false)
+	addRoundKey(state[:], &roundKeys[nbrRounds])
 
 	// Unmap state to output.
-	output := make([]byte, 16)
 	for i := range 4 {
 		for j := range 4 {
-			output[i*4+j] = state[i+j*4]
+			dst[i*4+j] = state[i+j*4]
 		}
+	}
+}
+
+func aesEncryptBlockCustom(input []byte, keySize int) []byte {
+	output := make([]byte, 16)
+	switch keySize {
+	case 16:
+		aesEncryptBlockCustomInPlace(output, input, v5RoundKeys(), 10)
+	case 20:
+		aesEncryptBlockCustomInPlace(output, input, v4RoundKeys(), 11)
+	default:
+		panic(fmt.Sprintf("invalid key size: %d", keySize))
 	}
 	return output
 }
 
-func aesDecryptBlockCustom(input []byte, keySize int) []byte {
-	var nbrRounds int
-	var expandedKey []byte
-	switch keySize {
-	case 16:
-		nbrRounds = 10
-		expandedKey = v5ExpandedKey()
-	case 20:
-		nbrRounds = 11
-		expandedKey = v4ExpandedKey()
-	default:
-		panic(fmt.Sprintf("invalid key size: %d", keySize))
-	}
-
-	state := make([]byte, 16)
+func aesDecryptBlockCustomInPlace(dst, input []byte, roundKeys [][16]byte, nbrRounds int) {
+	var state [16]byte
 	for i := range 4 {
 		for j := range 4 {
 			state[i+j*4] = input[i*4+j]
 		}
 	}
 
-	addRoundKey(state, createRoundKey(expandedKey, 16*nbrRounds))
+	addRoundKey(state[:], &roundKeys[nbrRounds])
 
 	for i := nbrRounds - 1; i > 0; i-- {
-		shiftRows(state, true)
-		subBytes(state, true)
-		addRoundKey(state, createRoundKey(expandedKey, 16*i))
-		mixColumns(state, true)
+		shiftRows(state[:], true)
+		subBytes(state[:], true)
+		addRoundKey(state[:], &roundKeys[i])
+		mixColumns(state[:], true)
 	}
 
-	shiftRows(state, true)
-	subBytes(state, true)
-	addRoundKey(state, createRoundKey(expandedKey, 0))
+	shiftRows(state[:], true)
+	subBytes(state[:], true)
+	addRoundKey(state[:], &roundKeys[0])
 
-	output := make([]byte, 16)
 	for i := range 4 {
 		for j := range 4 {
-			output[i*4+j] = state[i+j*4]
+			dst[i*4+j] = state[i+j*4]
 		}
+	}
+}
+
+func aesDecryptBlockCustom(input []byte, keySize int) []byte {
+	output := make([]byte, 16)
+	switch keySize {
+	case 16:
+		aesDecryptBlockCustomInPlace(output, input, v5RoundKeys(), 10)
+	case 20:
+		aesDecryptBlockCustomInPlace(output, input, v4RoundKeys(), 11)
+	default:
+		panic(fmt.Sprintf("invalid key size: %d", keySize))
 	}
 	return output
 }
 
 // aesEncryptBlockV6 encrypts a single block using AES-128 with V6 round patches.
-func aesEncryptBlockV6(input []byte) []byte {
-	// Use precomputed expanded key for V6
-	expandedKey := v6ExpandedKey()
-
-	state := make([]byte, 16)
+func aesEncryptBlockV6InPlace(dst, input []byte) {
+	roundKeys := v6RoundKeys()
+	var state [16]byte
 	for i := range 4 {
 		for j := range 4 {
 			state[i+j*4] = input[i*4+j]
 		}
 	}
 
-	addRoundKey(state, createRoundKey(expandedKey, 0))
+	addRoundKey(state[:], &roundKeys[0])
 
 	for i := 1; i < 10; i++ {
-		subBytes(state, false)
-		shiftRows(state, false)
-		mixColumns(state, false)
-		// V6 patches.
-		if patch, ok := v6Patches[i]; ok {
+		subBytes(state[:], false)
+		shiftRows(state[:], false)
+		mixColumns(state[:], false)
+		if patch := v6RoundPatch(i); patch != 0 {
 			state[0] ^= patch
 		}
-		addRoundKey(state, createRoundKey(expandedKey, 16*i))
+		addRoundKey(state[:], &roundKeys[i])
 	}
 
-	subBytes(state, false)
-	shiftRows(state, false)
-	addRoundKey(state, createRoundKey(expandedKey, 160))
+	subBytes(state[:], false)
+	shiftRows(state[:], false)
+	addRoundKey(state[:], &roundKeys[10])
 
-	output := make([]byte, 16)
 	for i := range 4 {
 		for j := range 4 {
-			output[i*4+j] = state[i+j*4]
+			dst[i*4+j] = state[i+j*4]
 		}
 	}
+}
+
+func aesEncryptBlockV6(input []byte) []byte {
+	output := make([]byte, 16)
+	aesEncryptBlockV6InPlace(output, input)
 	return output
 }
 
 // aesDecryptBlockV6 decrypts a single block using AES-128 with V6 round patches.
-func aesDecryptBlockV6(input []byte) []byte {
-	// Use precomputed expanded key for V6
-	expandedKey := v6ExpandedKey()
-
-	state := make([]byte, 16)
+func aesDecryptBlockV6InPlace(dst, input []byte) {
+	roundKeys := v6RoundKeys()
+	var state [16]byte
 	for i := range 4 {
 		for j := range 4 {
 			state[i+j*4] = input[i*4+j]
 		}
 	}
 
-	addRoundKey(state, createRoundKey(expandedKey, 160))
+	addRoundKey(state[:], &roundKeys[10])
 
 	for i := 9; i > 0; i-- {
-		shiftRows(state, true)
-		subBytes(state, true)
-		addRoundKey(state, createRoundKey(expandedKey, 16*i))
-		// V6 patches (applied after addRoundKey in inverse).
-		if patch, ok := v6Patches[i]; ok {
+		shiftRows(state[:], true)
+		subBytes(state[:], true)
+		addRoundKey(state[:], &roundKeys[i])
+		if patch := v6RoundPatch(i); patch != 0 {
 			state[0] ^= patch
 		}
-		mixColumns(state, true)
+		mixColumns(state[:], true)
 	}
 
-	shiftRows(state, true)
-	subBytes(state, true)
-	addRoundKey(state, createRoundKey(expandedKey, 0))
+	shiftRows(state[:], true)
+	subBytes(state[:], true)
+	addRoundKey(state[:], &roundKeys[0])
 
-	output := make([]byte, 16)
 	for i := range 4 {
 		for j := range 4 {
-			output[i*4+j] = state[i+j*4]
+			dst[i*4+j] = state[i+j*4]
 		}
 	}
+}
+
+func aesDecryptBlockV6(input []byte) []byte {
+	output := make([]byte, 16)
+	aesDecryptBlockV6InPlace(output, input)
 	return output
 }

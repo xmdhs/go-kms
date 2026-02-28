@@ -1,11 +1,11 @@
 package kms
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
+	"sync"
 
 	"github.com/xmdhs/go-kms/crypto"
 	"github.com/xmdhs/go-kms/logger"
@@ -76,6 +76,12 @@ func HandleV6Request(ctx context.Context, data []byte, config *ServerConfig) ([]
 	return handleV5V6Request(ctx, data, config, true)
 }
 
+var buf16Pool = sync.Pool{
+	New: func() any {
+		return new([16]byte)
+	},
+}
+
 func handleV5V6Request(ctx context.Context, data []byte, config *ServerConfig, isV6 bool) ([]byte, error) {
 	// Parse request header.
 	if len(data) < 12 {
@@ -103,9 +109,10 @@ func handleV5V6Request(ctx context.Context, data []byte, config *ServerConfig, i
 
 	// Decrypt the entire ciphertext using the first 16 bytes (salt) as IV,
 	// matching the Python py-kms behavior.
-	iv := make([]byte, 16)
-	copy(iv, salt)
-	decrypted, err := crypto.KMSDecryptCBC(messageData[:ciphertextLen], iv, isV6)
+	iv := buf16Pool.Get().(*[16]byte)
+	copy(iv[:], salt)
+	decrypted, err := crypto.KMSDecryptCBC(messageData[:ciphertextLen], iv[:], isV6)
+	buf16Pool.Put(iv)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decrypt request: %w", err)
 	}
@@ -134,63 +141,57 @@ func handleV5V6Request(ctx context.Context, data []byte, config *ServerConfig, i
 	randomSalt := crypto.RandomSalt()
 	hashResult := sha256.Sum256(randomSalt)
 
-	// Calculate randomStuff = SaltC ^ DSaltC ^ randomSalt
-	randomStuff := make([]byte, 16)
-	for i := range 16 {
-		if isV6 {
-			randomStuff[i] = salt[i] ^ decryptedSalt[i] ^ randomSalt[i]
-		} else {
-			randomStuff[i] = decryptedSalt[i] ^ salt[i] ^ randomSalt[i]
-		}
-	}
-
-	var responseData bytes.Buffer
-
 	if isV6 {
-		// V6: response + keys(16) + hash(32) + hwid(8) + xorSalts(16) + hmac(16)
-		xorSalts := make([]byte, 16)
+		// Build messageBytes: response + randomStuff(16) + hash(32) + hwid + xorSalts(16)
+		msgLen := len(responseBytes) + 16 + 32 + len(config.HWID) + 16
+		messageBytes := make([]byte, msgLen)
+		off := copy(messageBytes, responseBytes)
+		// Compute randomStuff directly into messageBytes.
 		for i := range 16 {
-			xorSalts[i] = salt[i] ^ decryptedSalt[i]
+			messageBytes[off+i] = salt[i] ^ decryptedSalt[i] ^ randomSalt[i]
 		}
-
-		// Build message part.
-		var message bytes.Buffer
-		message.Write(responseBytes)
-		message.Write(randomStuff)
-		message.Write(hashResult[:])
-		message.Write(config.HWID)
-		message.Write(xorSalts)
-		messageBytes := message.Bytes()
+		off += 16
+		copy(messageBytes[off:], hashResult[:])
+		off += 32
+		copy(messageBytes[off:], config.HWID)
+		off += len(config.HWID)
+		// Compute xorSalts directly into messageBytes.
+		for i := range 16 {
+			messageBytes[off+i] = salt[i] ^ decryptedSalt[i]
+		}
 
 		// Generate SaltS and DSaltS for HMAC.
 		saltS := crypto.RandomSalt()
-		ivS := make([]byte, 16)
-		copy(ivS, saltS)
-		dsaltS, err := crypto.KMSDecryptCBC(saltS, ivS, true)
+		ivS := buf16Pool.Get().(*[16]byte)
+		copy(ivS[:], saltS)
+		dsaltS, err := crypto.KMSDecryptCBC(saltS, ivS[:], true)
+		buf16Pool.Put(ivS)
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate DSaltS: %w", err)
 		}
 
-		// HMacMsg = (SaltS ^ DSaltS) + message
-		hmacMsg := make([]byte, 16)
+		// HMacMsg = (SaltS ^ DSaltS) + messageBytes
+		hmacMsg := make([]byte, 16+len(messageBytes))
 		for i := range 16 {
 			hmacMsg[i] = saltS[i] ^ dsaltS[i]
 		}
-		hmacMsg = append(hmacMsg, messageBytes...)
+		copy(hmacMsg[16:], messageBytes)
 
 		// HMacKey from request time.
 		hmacKey := crypto.V6MACKey(kmsRequest.RequestTime)
 		hmacDigest := crypto.V6HMAC(hmacKey, hmacMsg)
 
-		// Build full decrypted response.
-		responseData.Write(messageBytes)
-		responseData.Write(hmacDigest[16:]) // Last 16 bytes of HMAC
+		// Build full decrypted response: messageBytes + hmacDigest[16:]
+		responseDataBuf := make([]byte, len(messageBytes)+16)
+		copy(responseDataBuf, messageBytes)
+		copy(responseDataBuf[len(messageBytes):], hmacDigest[16:])
 
 		// Encrypt with SaltS as IV.
-		padded := crypto.PKCS7Pad(responseData.Bytes(), 16)
-		ivEnc := make([]byte, 16)
-		copy(ivEnc, saltS)
-		encryptedResp, err := crypto.KMSEncryptCBC(padded, ivEnc, true)
+		padded := crypto.PKCS7Pad(responseDataBuf, 16)
+		ivEnc := buf16Pool.Get().(*[16]byte)
+		copy(ivEnc[:], saltS)
+		encryptedResp, err := crypto.KMSEncryptCBC(padded, ivEnc[:], true)
+		buf16Pool.Put(ivEnc)
 		if err != nil {
 			return nil, fmt.Errorf("failed to encrypt V6 response: %w", err)
 		}
@@ -198,24 +199,27 @@ func handleV5V6Request(ctx context.Context, data []byte, config *ServerConfig, i
 		return buildV5V6Response(versionMinor, versionMajor, saltS, encryptedResp), nil
 	}
 
-	// V5: response + keys(16) + hash(32)
-	responseData.Write(responseBytes)
-	responseData.Write(randomStuff)
-	responseData.Write(hashResult[:])
+	// V5: responseData = response + randomStuff(16) + hash(32)
+	rdLen := len(responseBytes) + 16 + 32
+	responseDataBuf := make([]byte, rdLen)
+	off := copy(responseDataBuf, responseBytes)
+	// Compute randomStuff directly into responseDataBuf.
+	for i := range 16 {
+		responseDataBuf[off+i] = decryptedSalt[i] ^ salt[i] ^ randomSalt[i]
+	}
+	off += 16
+	copy(responseDataBuf[off:], hashResult[:])
 
-	padded := crypto.PKCS7Pad(responseData.Bytes(), 16)
-	ivEnc := make([]byte, 16)
-	copy(ivEnc, salt)
-	encryptedResp, err := crypto.KMSEncryptCBC(padded, ivEnc, false)
+	padded := crypto.PKCS7Pad(responseDataBuf, 16)
+	ivEnc := buf16Pool.Get().(*[16]byte)
+	copy(ivEnc[:], salt)
+	encryptedResp, err := crypto.KMSEncryptCBC(padded, ivEnc[:], false)
+	buf16Pool.Put(ivEnc)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encrypt V5 response: %w", err)
 	}
 
-	ver := 5
-	if isV6 {
-		ver = 6
-	}
-	logger.Debug(ctx, "KMS response generated", "version", ver)
+	logger.Debug(ctx, "KMS V5 response generated")
 	return buildV5V6Response(versionMinor, versionMajor, salt, encryptedResp), nil
 }
 
