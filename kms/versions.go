@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
-	"sync"
 
 	"github.com/xmdhs/go-kms/crypto"
 	"github.com/xmdhs/go-kms/logger"
@@ -76,12 +75,6 @@ func HandleV6Request(ctx context.Context, data []byte, config *ServerConfig) ([]
 	return handleV5V6Request(ctx, data, config, true)
 }
 
-var buf16Pool = sync.Pool{
-	New: func() any {
-		return new([16]byte)
-	},
-}
-
 func handleV5V6Request(ctx context.Context, data []byte, config *ServerConfig, isV6 bool) ([]byte, error) {
 	// Parse request header.
 	if len(data) < 12 {
@@ -109,10 +102,7 @@ func handleV5V6Request(ctx context.Context, data []byte, config *ServerConfig, i
 
 	// Decrypt the entire ciphertext using the first 16 bytes (salt) as IV,
 	// matching the Python py-kms behavior.
-	iv := buf16Pool.Get().(*[16]byte)
-	copy(iv[:], salt)
-	decrypted, err := crypto.KMSDecryptCBC(messageData[:ciphertextLen], iv[:], isV6)
-	buf16Pool.Put(iv)
+	decrypted, err := crypto.KMSDecryptCBC(messageData[:ciphertextLen], salt, isV6)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decrypt request: %w", err)
 	}
@@ -162,10 +152,7 @@ func handleV5V6Request(ctx context.Context, data []byte, config *ServerConfig, i
 
 		// Generate SaltS and DSaltS for HMAC.
 		saltS := crypto.RandomSalt()
-		ivS := buf16Pool.Get().(*[16]byte)
-		copy(ivS[:], saltS)
-		dsaltS, err := crypto.KMSDecryptCBC(saltS, ivS[:], true)
-		buf16Pool.Put(ivS)
+		dsaltS, err := crypto.KMSDecryptCBC(saltS, saltS, true)
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate DSaltS: %w", err)
 		}
@@ -188,10 +175,7 @@ func handleV5V6Request(ctx context.Context, data []byte, config *ServerConfig, i
 
 		// Encrypt with SaltS as IV.
 		padded := crypto.PKCS7Pad(responseDataBuf, 16)
-		ivEnc := buf16Pool.Get().(*[16]byte)
-		copy(ivEnc[:], saltS)
-		encryptedResp, err := crypto.KMSEncryptCBC(padded, ivEnc[:], true)
-		buf16Pool.Put(ivEnc)
+		encryptedResp, err := crypto.KMSEncryptCBC(padded, saltS, true)
 		if err != nil {
 			return nil, fmt.Errorf("failed to encrypt V6 response: %w", err)
 		}
@@ -211,10 +195,7 @@ func handleV5V6Request(ctx context.Context, data []byte, config *ServerConfig, i
 	copy(responseDataBuf[off:], hashResult[:])
 
 	padded := crypto.PKCS7Pad(responseDataBuf, 16)
-	ivEnc := buf16Pool.Get().(*[16]byte)
-	copy(ivEnc[:], salt)
-	encryptedResp, err := crypto.KMSEncryptCBC(padded, ivEnc[:], false)
-	buf16Pool.Put(ivEnc)
+	encryptedResp, err := crypto.KMSEncryptCBC(padded, salt, false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encrypt V5 response: %w", err)
 	}
