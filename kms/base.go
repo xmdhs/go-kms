@@ -22,35 +22,102 @@ import (
 // UUID represents a 16-byte UUID in KMS wire format (bytes_le).
 type UUID [16]byte
 
+const hextable = "0123456789abcdef"
+
 func (u UUID) String() string {
-	// Convert from bytes_le format to standard UUID string.
-	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
-		binary.LittleEndian.Uint32(u[0:4]),
-		binary.LittleEndian.Uint16(u[4:6]),
-		binary.LittleEndian.Uint16(u[6:8]),
-		u[8:10],
-		u[10:16])
+	// Layout: 8-4-4-4-12 hex chars + 4 dashes = 36 bytes
+	var buf [36]byte
+
+	// Group 1: bytes 0-3, little-endian uint32 → 8 hex chars
+	v32 := binary.LittleEndian.Uint32(u[0:4])
+	for i := 7; i >= 0; i-- {
+		buf[i] = hextable[v32&0xf]
+		v32 >>= 4
+	}
+	buf[8] = '-'
+
+	// Group 2: bytes 4-5, little-endian uint16 → 4 hex chars
+	v16 := binary.LittleEndian.Uint16(u[4:6])
+	for i := 12; i >= 9; i-- {
+		buf[i] = hextable[v16&0xf]
+		v16 >>= 4
+	}
+	buf[13] = '-'
+
+	// Group 3: bytes 6-7, little-endian uint16 → 4 hex chars
+	v16 = binary.LittleEndian.Uint16(u[6:8])
+	for i := 17; i >= 14; i-- {
+		buf[i] = hextable[v16&0xf]
+		v16 >>= 4
+	}
+	buf[18] = '-'
+
+	// Group 4: bytes 8-9, big-endian → 4 hex chars
+	for i, b := range u[8:10] {
+		buf[19+i*2] = hextable[b>>4]
+		buf[20+i*2] = hextable[b&0xf]
+	}
+	buf[23] = '-'
+
+	// Group 5: bytes 10-15, big-endian → 12 hex chars
+	for i, b := range u[10:16] {
+		buf[24+i*2] = hextable[b>>4]
+		buf[25+i*2] = hextable[b&0xf]
+	}
+
+	return string(buf[:])
+}
+
+// hexVal returns the nibble value of a hex character, or 255 on error.
+func hexVal(c byte) byte {
+	switch {
+	case c >= '0' && c <= '9':
+		return c - '0'
+	case c >= 'a' && c <= 'f':
+		return c - 'a' + 10
+	case c >= 'A' && c <= 'F':
+		return c - 'A' + 10
+	}
+	return 255
 }
 
 func UUIDFromString(s string) (UUID, error) {
-	s = strings.ReplaceAll(s, "-", "")
-	if len(s) != 32 {
+	// Accept both "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" (32) and
+	// "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" (36).
+	if len(s) != 36 && len(s) != 32 {
 		return UUID{}, fmt.Errorf("invalid UUID string length: %d", len(s))
 	}
-	b, err := hex.DecodeString(s)
-	if err != nil {
-		return UUID{}, err
+
+	// Decode directly into a [16]byte without allocations.
+	var b [16]byte
+	j := 0
+	for i := 0; i < len(s); {
+		c := s[i]
+		if c == '-' {
+			i++
+			continue
+		}
+		if i+1 >= len(s) {
+			return UUID{}, fmt.Errorf("invalid UUID string")
+		}
+		hi := hexVal(c)
+		lo := hexVal(s[i+1])
+		if hi == 255 || lo == 255 {
+			return UUID{}, fmt.Errorf("invalid hex character in UUID")
+		}
+		b[j] = hi<<4 | lo
+		j++
+		i += 2
 	}
+	if j != 16 {
+		return UUID{}, fmt.Errorf("invalid UUID string")
+	}
+
 	var u UUID
-	// Convert to bytes_le format: first 3 groups are little-endian.
-	u[0] = b[3]
-	u[1] = b[2]
-	u[2] = b[1]
-	u[3] = b[0]
-	u[4] = b[5]
-	u[5] = b[4]
-	u[6] = b[7]
-	u[7] = b[6]
+	// bytes_le: first three groups are stored little-endian.
+	u[0], u[1], u[2], u[3] = b[3], b[2], b[1], b[0]
+	u[4], u[5] = b[5], b[4]
+	u[6], u[7] = b[7], b[6]
 	copy(u[8:], b[8:])
 	return u, nil
 }
@@ -358,20 +425,19 @@ func ServerLogic(ctx context.Context, kmsRequest *KMSRequest, config *ServerConf
 	}
 
 	// Generate ePID.
-	var epidUTF16 []byte
+	var epid string
 	if config.EPID == "" {
-		epid := GenerateEPID(kmsRequest.KMSCountedID, kmsRequest.VersionMajor, config.LCID)
-		epidUTF16 = EncodeUTF16LE(epid)
+		epid = GenerateEPID(kmsRequest.KMSCountedID, kmsRequest.VersionMajor, config.LCID)
 	} else {
-		epidUTF16 = EncodeUTF16LE(config.EPID)
+		epid = config.EPID
 	}
 
-	log.Debug("Server ePID: " + DecodeUTF16LE(epidUTF16))
+	log.Debug("Server ePID: " + epid)
 
 	response := &KMSResponse{
 		VersionMinor:         kmsRequest.VersionMinor,
 		VersionMajor:         kmsRequest.VersionMajor,
-		KMSEpid:              epidUTF16,
+		KMSEpid:              EncodeUTF16LE(epid),
 		ClientMachineID:      kmsRequest.ClientMachineID,
 		ResponseTime:         kmsRequest.RequestTime,
 		CurrentClientCount:   currentClientCount,

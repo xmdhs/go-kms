@@ -330,7 +330,7 @@ func buildRoundKeys(expandedKey []byte, rounds int) [][16]byte {
 
 func buildMulTable(mult byte) [256]byte {
 	var table [256]byte
-	for i := 0; i < 256; i++ {
+	for i := range 256 {
 		table[i] = galoisMult(byte(i), mult)
 	}
 	return table
