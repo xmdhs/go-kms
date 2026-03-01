@@ -125,14 +125,6 @@ func BenchmarkParseKMSResponse(b *testing.B) {
 	}
 }
 
-func BenchmarkGenerateEPID(b *testing.B) {
-	kmsId := MustUUID("cb8fc780-2c05-495a-9710-85afffc904d7")
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		GenerateEPID(kmsId, 6, 1033)
-	}
-}
-
 func BenchmarkServerLogic(b *testing.B) {
 	req := &KMSRequest{
 		VersionMinor:        1,
@@ -149,16 +141,16 @@ func BenchmarkServerLogic(b *testing.B) {
 		MachineNameRaw:      make([]byte, 128),
 	}
 	config := DefaultServerConfig()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		ServerLogic(context.Background(), req, config)
 	}
 }
 
 func BenchmarkFileTimeToTime(b *testing.B) {
 	ft := TimeToFileTime(time.Now())
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		FileTimeToTime(ft)
 	}
 }

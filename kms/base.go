@@ -2,18 +2,13 @@ package kms
 
 import (
 	"context"
+	"crypto/rand"
 	_ "embed"
 	"encoding/binary"
 	"encoding/hex"
-	"encoding/xml"
 	"fmt"
 	"log/slog"
-	"math/rand"
-	"slices"
-	"strconv"
-	"strings"
-	"sync"
-	"time"
+	"sync/atomic"
 	"unicode/utf16"
 
 	"github.com/xmdhs/go-kms/logger"
@@ -399,6 +394,8 @@ func GetPadding(bodyLength int) int {
 	return 4 + (((^bodyLength & 3) + 1) & 3)
 }
 
+var epid atomic.Pointer[[]byte]
+
 // ServerLogic processes a KMS request and generates a response.
 func ServerLogic(ctx context.Context, kmsRequest *KMSRequest, config *ServerConfig) *KMSResponse {
 	// Activation threshold calculation.
@@ -419,12 +416,16 @@ func ServerLogic(ctx context.Context, kmsRequest *KMSRequest, config *ServerConf
 		currentClientCount = requiredClients
 	}
 
-	// Generate ePID.
-	var epid string
-	if config.EPID == "" {
-		epid = GenerateEPID(kmsRequest.KMSCountedID, kmsRequest.VersionMajor, config.LCID)
-	} else {
-		epid = config.EPID
+	epidB := epid.Load()
+	if epidB == nil {
+		if config.EPID == "" {
+			b := EncodeUTF16LE(RandomUUID().String())
+			epid.CompareAndSwap(epidB, &b)
+		} else {
+			b := EncodeUTF16LE(config.EPID)
+			epid.CompareAndSwap(epidB, &b)
+		}
+
 	}
 
 	logger.LogAttrs(ctx, slog.LevelDebug, "Response",
@@ -435,13 +436,12 @@ func ServerLogic(ctx context.Context, kmsRequest *KMSRequest, config *ServerConf
 		slog.Any("KMS Counted ID", kmsRequest.KMSCountedID),
 		slog.String("License Status", LicenseStates[kmsRequest.LicenseStatus]),
 		slog.Time("Request Time", FileTimeToTime(int64(kmsRequest.RequestTime))),
-		slog.String("Server ePID", epid),
 	)
 
 	response := &KMSResponse{
 		VersionMinor:         kmsRequest.VersionMinor,
 		VersionMajor:         kmsRequest.VersionMajor,
-		KMSEpid:              EncodeUTF16LE(epid),
+		KMSEpid:              *epid.Load(),
 		ClientMachineID:      kmsRequest.ClientMachineID,
 		ResponseTime:         kmsRequest.RequestTime,
 		CurrentClientCount:   currentClientCount,
@@ -499,284 +499,6 @@ func GenerateKMSResponseData(ctx context.Context, data []byte, config *ServerCon
 		logger.LogAttrs(ctx, slog.LevelWarn, "Unhandled KMS version", slog.Uint64("version", uint64(version)))
 		return HandleUnknownRequest()
 	}
-}
-
-// --- KMS Database XML Parsing ---
-
-type KmsDataBase struct {
-	WinBuilds  []WinBuild
-	CsvlkItems []CsvlkItem
-	AppItems   []AppItem
-}
-
-type WinBuild struct {
-	WinBuildIndex string `xml:"WinBuildIndex,attr"`
-	BuildNumber   string `xml:"BuildNumber,attr"`
-	PlatformId    string `xml:"PlatformId,attr"`
-	MinDate       string `xml:"MinDate,attr"`
-}
-
-type CsvlkItem struct {
-	GroupId         string `xml:"GroupId,attr"`
-	MinKeyId        string `xml:"MinKeyId,attr"`
-	MaxKeyId        string `xml:"MaxKeyId,attr"`
-	InvalidWinBuild string `xml:"InvalidWinBuild,attr"`
-	Activates       []string
-}
-
-type AppItem struct {
-	Id          string `xml:"Id,attr"`
-	DisplayName string `xml:"DisplayName,attr"`
-	KmsItems    []KmsItem
-}
-
-type KmsItem struct {
-	Id                 string `xml:"Id,attr"`
-	DisplayName        string `xml:"DisplayName,attr"`
-	NCountPolicy       string `xml:"NCountPolicy,attr"`
-	DefaultKmsProtocol string `xml:"DefaultKmsProtocol,attr"`
-	SkuItems           []SkuItem
-}
-
-type SkuItem struct {
-	Id          string `xml:"Id,attr"`
-	DisplayName string `xml:"DisplayName,attr"`
-}
-
-// XML structures for parsing.
-type xmlRoot struct {
-	XMLName    xml.Name      `xml:"KmsData"`
-	WinBuilds  []xmlWinBuild `xml:"WinBuild"`
-	CsvlkItems []xmlCsvlk    `xml:"CsvlkItem"`
-	AppItems   []xmlApp      `xml:"AppItem"`
-}
-
-type xmlWinBuild struct {
-	WinBuildIndex string `xml:"WinBuildIndex,attr"`
-	BuildNumber   string `xml:"BuildNumber,attr"`
-	PlatformId    string `xml:"PlatformId,attr"`
-	MinDate       string `xml:"MinDate,attr"`
-}
-
-type xmlCsvlk struct {
-	GroupId         string        `xml:"GroupId,attr"`
-	MinKeyId        string        `xml:"MinKeyId,attr"`
-	MaxKeyId        string        `xml:"MaxKeyId,attr"`
-	InvalidWinBuild string        `xml:"InvalidWinBuild,attr"`
-	Activates       []xmlActivate `xml:"Activate"`
-}
-
-type xmlActivate struct {
-	KmsItem string `xml:"KmsItem,attr"`
-}
-
-type xmlApp struct {
-	Id          string       `xml:"Id,attr"`
-	DisplayName string       `xml:"DisplayName,attr"`
-	KmsItems    []xmlKmsItem `xml:"KmsItem"`
-}
-
-type xmlKmsItem struct {
-	Id                 string       `xml:"Id,attr"`
-	DisplayName        string       `xml:"DisplayName,attr"`
-	NCountPolicy       string       `xml:"NCountPolicy,attr"`
-	DefaultKmsProtocol string       `xml:"DefaultKmsProtocol,attr"`
-	SkuItems           []xmlSkuItem `xml:"SkuItem"`
-}
-
-type xmlSkuItem struct {
-	Id          string `xml:"Id,attr"`
-	DisplayName string `xml:"DisplayName,attr"`
-}
-
-//go:embed KmsDataBase.xml
-var kmsDataBaseFile []byte
-
-var kmsDB = sync.OnceValues(LoadKmsDB)
-
-func LoadKmsDB() (*KmsDataBase, error) {
-	data := kmsDataBaseFile
-
-	var root xmlRoot
-	if err := xml.Unmarshal(data, &root); err != nil {
-		return nil, fmt.Errorf("failed to parse KmsDataBase.xml: %w", err)
-	}
-
-	db := &KmsDataBase{}
-
-	for _, wb := range root.WinBuilds {
-		db.WinBuilds = append(db.WinBuilds, WinBuild{
-			WinBuildIndex: wb.WinBuildIndex,
-			BuildNumber:   wb.BuildNumber,
-			PlatformId:    wb.PlatformId,
-			MinDate:       wb.MinDate,
-		})
-	}
-
-	for _, csvlk := range root.CsvlkItems {
-		item := CsvlkItem{
-			GroupId:         csvlk.GroupId,
-			MinKeyId:        csvlk.MinKeyId,
-			MaxKeyId:        csvlk.MaxKeyId,
-			InvalidWinBuild: csvlk.InvalidWinBuild,
-		}
-		for _, act := range csvlk.Activates {
-			item.Activates = append(item.Activates, act.KmsItem)
-		}
-		db.CsvlkItems = append(db.CsvlkItems, item)
-	}
-
-	for _, app := range root.AppItems {
-		appItem := AppItem{
-			Id:          app.Id,
-			DisplayName: app.DisplayName,
-		}
-		for _, ki := range app.KmsItems {
-			kmsItem := KmsItem{
-				Id:                 ki.Id,
-				DisplayName:        ki.DisplayName,
-				NCountPolicy:       ki.NCountPolicy,
-				DefaultKmsProtocol: ki.DefaultKmsProtocol,
-			}
-			for _, si := range ki.SkuItems {
-				kmsItem.SkuItems = append(kmsItem.SkuItems, SkuItem{
-					Id:          si.Id,
-					DisplayName: si.DisplayName,
-				})
-			}
-			appItem.KmsItems = append(appItem.KmsItems, kmsItem)
-		}
-		db.AppItems = append(db.AppItems, appItem)
-	}
-
-	return db, nil
-}
-
-// GenerateEPID generates an ePID string.
-func GenerateEPID(kmsId UUID, version uint16, lcid int) string {
-	db, err := kmsDB()
-	if err != nil {
-		// Fallback to Windows Server 2019 parameters.
-		return generateFallbackEPID(lcid)
-	}
-
-	kmsIdStr := kmsId.String()
-
-	// Find matching CSVLK.
-	var groupId, minKeyId, maxKeyId, invalidBuild string
-	found := false
-	for _, csvlk := range db.CsvlkItems {
-		for _, act := range csvlk.Activates {
-			if strings.EqualFold(act, kmsIdStr) {
-				groupId = csvlk.GroupId
-				minKeyId = csvlk.MinKeyId
-				maxKeyId = csvlk.MaxKeyId
-				invalidBuild = csvlk.InvalidWinBuild
-				found = true
-				break
-			}
-		}
-		if found {
-			break
-		}
-	}
-
-	if !found {
-		groupId = "206"
-		minKeyId = "551000000"
-		maxKeyId = "570999999"
-		invalidBuild = "[0,1,2]"
-	}
-
-	gid, _ := strconv.Atoi(groupId)
-	minKey, _ := strconv.Atoi(minKeyId)
-	maxKey, _ := strconv.Atoi(maxKeyId)
-
-	// Parse invalid builds.
-	invalidBuilds := parseInvalidBuilds(invalidBuild)
-
-	// Find valid host build.
-	buildNumber := "17763"
-	platformId := "3612"
-	minDate := "02/10/2018"
-
-	for _, wb := range db.WinBuilds {
-		idx, _ := strconv.Atoi(wb.WinBuildIndex)
-		isInvalid := slices.Contains(invalidBuilds, idx)
-		if !isInvalid {
-			buildNumber = wb.BuildNumber
-			platformId = wb.PlatformId
-			minDate = wb.MinDate
-			break
-		}
-	}
-
-	// Generate product key ID.
-	productKeyID := minKey + rand.Intn(maxKey-minKey+1)
-
-	// License channel (always Volume).
-	licenseChannel := 3
-
-	// Parse min date.
-	d, err := time.Parse("02/01/2006", minDate)
-	if err != nil {
-		d = time.Date(2018, 10, 2, 0, 0, 0, 0, time.UTC)
-	}
-
-	// Random date between min and now.
-	now := time.Now()
-	diff := now.Unix() - d.Unix()
-	if diff <= 0 {
-		diff = 1
-	}
-	randomDate := time.Unix(d.Unix()+rand.Int63n(diff), 0)
-	firstOfYear := time.Date(randomDate.Year(), 1, 1, 0, 0, 0, 0, time.UTC)
-	dayNumber := int(randomDate.Sub(firstOfYear).Hours()/24 + 0.5)
-
-	return fmt.Sprintf("%05s-%05d-%03d-%06d-%02d-%d-%s.0000-%03d%04d",
-		platformId,
-		gid,
-		productKeyID/1000000,
-		productKeyID%1000000,
-		licenseChannel,
-		lcid,
-		padLeft(buildNumber, 4, "0"),
-		dayNumber,
-		randomDate.Year())
-}
-
-func generateFallbackEPID(lcid int) string {
-	productKeyID := 551000000 + rand.Intn(19999999)
-	now := time.Now()
-	firstOfYear := time.Date(now.Year(), 1, 1, 0, 0, 0, 0, time.UTC)
-	dayNumber := int(now.Sub(firstOfYear).Hours()/24 + 0.5)
-
-	return fmt.Sprintf("03612-00206-%03d-%06d-03-%d-17763.0000-%03d%04d",
-		productKeyID/1000000,
-		productKeyID%1000000,
-		lcid,
-		dayNumber,
-		now.Year())
-}
-
-func parseInvalidBuilds(s string) []int {
-	s = strings.Trim(s, "[]")
-	parts := strings.Split(s, ",")
-	var result []int
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if v, err := strconv.Atoi(p); err == nil {
-			result = append(result, v)
-		}
-	}
-	return result
-}
-
-func padLeft(s string, length int, pad string) string {
-	for len(s) < length {
-		s = pad + s
-	}
-	return s
 }
 
 // HandleUnknownRequest returns an error response for unhandled versions.
