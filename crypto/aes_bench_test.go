@@ -175,3 +175,100 @@ func BenchmarkExpandKey_20(b *testing.B) {
 		expandKey(key, 20, 192)
 	}
 }
+
+// Benchmark for V4 full encryption/decryption cycle
+func BenchmarkV4EncryptCycle(b *testing.B) {
+	data := benchData(256, 0xF5)
+	b.ReportAllocs()
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		// V4 uses custom AES block encryption via V4Hash
+		V4Hash(data)
+	}
+}
+
+// Benchmark for buildRoundKeys
+func BenchmarkBuildRoundKeys(b *testing.B) {
+	expanded := expandKey(V5Key, 16, 176)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		buildRoundKeys(expanded, 10)
+	}
+}
+
+// Benchmark for galois multiplication (used in MixColumns)
+func BenchmarkGaloisMult(b *testing.B) {
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		galoisMult(0x57, 0x83)
+	}
+}
+
+// Benchmark for RandomSalt
+func BenchmarkRandomSalt(b *testing.B) {
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		RandomSalt()
+	}
+}
+
+// Benchmark for complete V6 encryption cycle with HMAC
+func BenchmarkV6EncryptWithHMAC(b *testing.B) {
+	data := PKCS7Pad(benchData(256, 0xF6), 16)
+	iv := benchData(16, 0xF7)
+	macKey := benchData(16, 0xF8)
+	b.ReportAllocs()
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		encrypted, _ := KMSEncryptCBC(data, iv, true)
+		_ = V6HMAC(macKey, encrypted)
+	}
+}
+
+// Benchmark for KMS V5/V6 full request-response cycle simulation
+func BenchmarkFullCryptoCycle_V5(b *testing.B) {
+	// Simulate a typical KMS request encryption/decryption cycle
+	plainData := benchData(200, 0xF9)
+	salt := benchData(16, 0xFA)
+
+	// Build request: salt + kmsData
+	request := make([]byte, 16+len(plainData))
+	copy(request[:16], salt)
+	copy(request[16:], plainData)
+	padded := PKCS7Pad(request, 16)
+
+	b.ReportAllocs()
+	b.SetBytes(int64(len(padded)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		// Encrypt
+		encrypted, _ := KMSEncryptCBC(padded, salt, false)
+		// Decrypt
+		decrypted, _ := KMSDecryptCBC(encrypted, salt, false)
+		// Unpad
+		PKCS7Unpad(decrypted)
+	}
+}
+
+func BenchmarkFullCryptoCycle_V6(b *testing.B) {
+	plainData := benchData(200, 0xFB)
+	salt := benchData(16, 0xFC)
+	request := make([]byte, 16+len(plainData))
+	copy(request[:16], salt)
+	copy(request[16:], plainData)
+	padded := PKCS7Pad(request, 16)
+
+	b.ReportAllocs()
+	b.SetBytes(int64(len(padded)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		encrypted, _ := KMSEncryptCBC(padded, salt, true)
+		decrypted, _ := KMSDecryptCBC(encrypted, salt, true)
+		PKCS7Unpad(decrypted)
+	}
+}
