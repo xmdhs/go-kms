@@ -27,6 +27,26 @@ func buildTestRPCResponse() ([]byte, *MSRPCRequestHeader) {
 	return resp, reqHeader
 }
 
+func TestBuildBindAckResponseRejectsInvalidAuthLen(t *testing.T) {
+	data := make([]byte, MSRPCHeaderSize)
+	data[0] = 5
+	data[1] = 0
+	data[2] = PacketTypeBind
+	binary.LittleEndian.PutUint16(data[8:10], MSRPCHeaderSize)
+	binary.LittleEndian.PutUint16(data[10:12], MSRPCHeaderSize)
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("BuildBindAckResponse panicked: %v", r)
+		}
+	}()
+
+	_, err := BuildBindAckResponse(data, 1688, 1)
+	if err == nil {
+		t.Fatal("expected error for invalid auth length")
+	}
+}
+
 func BenchmarkParseMSRPCHeader(b *testing.B) {
 	data := buildTestBindRequest()
 	b.ResetTimer()

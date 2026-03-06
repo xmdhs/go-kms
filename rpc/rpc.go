@@ -125,6 +125,9 @@ func PDUData(data []byte) []byte {
 	if end > len(data) {
 		end = len(data)
 	}
+	if end <= MSRPCHeaderSize {
+		return nil
+	}
 	return data[MSRPCHeaderSize:end]
 }
 

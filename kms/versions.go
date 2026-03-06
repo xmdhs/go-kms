@@ -25,12 +25,15 @@ func HandleV4Request(ctx context.Context, data []byte, config *ServerConfig) ([]
 
 	// The remaining data contains the KMS request + hash + padding.
 	remaining := data[offset:]
-	if int(bodyLength1) > len(remaining) {
+	if bodyLength1 < 16 {
+		return nil, fmt.Errorf("V4 body length too short: %d", bodyLength1)
+	}
+	if bodyLength1 > uint32(len(remaining)) {
 		return nil, fmt.Errorf("V4 body length mismatch")
 	}
 
 	// The hash is the last 16 bytes of the body.
-	requestData := remaining[:bodyLength1-16]
+	requestData := remaining[:int(bodyLength1)-16]
 	// hash := remaining[bodyLength1-16 : bodyLength1]
 
 	kmsRequest, err := ParseKMSRequest(requestData)

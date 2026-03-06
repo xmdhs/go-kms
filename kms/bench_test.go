@@ -17,6 +17,23 @@ func BenchmarkEncodeUTF16LE(b *testing.B) {
 	}
 }
 
+func TestHandleV4RequestRejectsShortBodyLength(t *testing.T) {
+	data := make([]byte, 16)
+	binary.LittleEndian.PutUint32(data[0:4], 8)
+	binary.LittleEndian.PutUint32(data[4:8], 8)
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("HandleV4Request panicked: %v", r)
+		}
+	}()
+
+	_, err := HandleV4Request(context.Background(), data, DefaultServerConfig())
+	if err == nil {
+		t.Fatal("expected error for short V4 body length")
+	}
+}
+
 func BenchmarkDecodeUTF16LE(b *testing.B) {
 	s := "TEST-MACHINE-001"
 	data := EncodeUTF16LE(s)
