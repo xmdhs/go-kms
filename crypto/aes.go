@@ -574,3 +574,16 @@ func aesDecryptBlockV6Go(dst, input []byte) {
 		}
 	}
 }
+
+func invMixColumnsRoundKey(key [16]byte) [16]byte {
+	out := key
+	for col := range 4 {
+		off := col * 4
+		a0, a1, a2, a3 := out[off], out[off+1], out[off+2], out[off+3]
+		out[off] = mul14Table[a0] ^ mul11Table[a1] ^ mul13Table[a2] ^ mul9Table[a3]
+		out[off+1] = mul9Table[a0] ^ mul14Table[a1] ^ mul11Table[a2] ^ mul13Table[a3]
+		out[off+2] = mul13Table[a0] ^ mul9Table[a1] ^ mul14Table[a2] ^ mul11Table[a3]
+		out[off+3] = mul11Table[a0] ^ mul13Table[a1] ^ mul9Table[a2] ^ mul14Table[a3]
+	}
+	return out
+}

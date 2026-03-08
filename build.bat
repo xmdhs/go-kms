@@ -1,6 +1,6 @@
 SET CGO_ENABLED=0
 SET GOOS=linux
-SET GOARCH=amd64
+IF "%GOARCH%"=="" SET GOARCH=amd64
 
-go build -trimpath -ldflags "-w -s" 
+go build -trimpath -ldflags "-w -s"
 
