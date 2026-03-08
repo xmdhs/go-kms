@@ -24,7 +24,7 @@ type KMSServer struct {
 }
 
 // maxFragLen is the maximum allowed RPC fragment length to prevent DoS via oversized allocations.
-const maxFragLen = 1024
+const maxFragLen = 512
 
 var connBufPool = sync.Pool{
 	New: func() any {

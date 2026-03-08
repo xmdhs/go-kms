@@ -116,7 +116,7 @@ func Run(config *ClientConfig) error {
 	}
 
 	// Receive BIND ACK.
-	bindAck, err := rpc.RecvAll(conn, 1024)
+	bindAck, err := rpc.RecvAll(conn, 512)
 	if err != nil {
 		return fmt.Errorf("failed to receive bind ack: %w", err)
 	}
@@ -159,7 +159,7 @@ func Run(config *ClientConfig) error {
 	}
 
 	// Receive response.
-	respData, err := rpc.RecvAll(conn, 1024)
+	respData, err := rpc.RecvAll(conn, 512)
 	if err != nil {
 		return fmt.Errorf("failed to receive response: %w", err)
 	}
