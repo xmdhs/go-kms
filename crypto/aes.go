@@ -55,11 +55,20 @@ var V4Key = []byte{0x05, 0x3D, 0x83, 0x07, 0xF9, 0xE5, 0xF0, 0x88, 0xEB, 0x5E, 0
 
 // Precomputed round keys for performance (using sync.OnceValue for lazy initialization)
 var (
+	v5Block = sync.OnceValue(func() cipher.Block {
+		block, err := aes.NewCipher(V5Key)
+		if err != nil {
+			panic(err)
+		}
+		return block
+	})
 	v5RoundKeys = sync.OnceValue(func() [][16]byte {
 		return buildRoundKeys(expandKey(V5Key, 16, 176), 10)
 	})
 	v6RoundKeys = sync.OnceValue(func() [][16]byte {
-		return buildRoundKeys(expandKey(V6Key, 16, 176), 10)
+		roundKeys := buildRoundKeys(expandKey(V6Key, 16, 176), 10)
+		applyV6RoundPatches(roundKeys)
+		return roundKeys
 	})
 	v4RoundKeys = sync.OnceValue(func() [][16]byte {
 		return buildRoundKeys(expandKey(V4Key, 20, 192), 11)
@@ -72,15 +81,11 @@ func KMSEncryptCBC(data, iv []byte, v6 bool) ([]byte, error) {
 	if v6 {
 		return aesEncryptCBCV6(data, iv)
 	}
-	block, err := aes.NewCipher(V5Key)
-	if err != nil {
-		return nil, err
-	}
 	if len(data)%aes.BlockSize != 0 {
 		return nil, fmt.Errorf("plaintext is not a multiple of block size")
 	}
 	ciphertext := make([]byte, len(data))
-	mode := cipher.NewCBCEncrypter(block, iv)
+	mode := cipher.NewCBCEncrypter(v5Block(), iv)
 	mode.CryptBlocks(ciphertext, data)
 	return ciphertext, nil
 }
@@ -90,31 +95,27 @@ func KMSDecryptCBC(data, iv []byte, v6 bool) ([]byte, error) {
 	if v6 {
 		return aesDecryptCBCV6(data, iv)
 	}
-	block, err := aes.NewCipher(V5Key)
-	if err != nil {
-		return nil, err
-	}
 	if len(data)%aes.BlockSize != 0 {
 		return nil, fmt.Errorf("ciphertext is not a multiple of block size")
 	}
 	plaintext := make([]byte, len(data))
-	mode := cipher.NewCBCDecrypter(block, iv)
+	mode := cipher.NewCBCDecrypter(v5Block(), iv)
 	mode.CryptBlocks(plaintext, data)
 	return plaintext, nil
 }
 
-// v6RoundPatch returns the XOR patch applied during V6 AES rounds.
-// Round 4: state[0] ^= 0x73, Round 6: state[0] ^= 0x09, Round 8: state[0] ^= 0xE4
-func v6RoundPatch(round int) byte {
-	switch round {
-	case 4:
-		return 0x73
-	case 6:
-		return 0x09
-	case 8:
-		return 0xE4
-	default:
-		return 0
+var v6RoundPatches = [...]struct {
+	round int
+	patch byte
+}{
+	{round: 4, patch: 0x73},
+	{round: 6, patch: 0x09},
+	{round: 8, patch: 0xE4},
+}
+
+func applyV6RoundPatches(roundKeys [][16]byte) {
+	for _, item := range v6RoundPatches {
+		roundKeys[item.round][0] ^= item.patch
 	}
 }
 
@@ -218,9 +219,9 @@ func V6MACKey(requestTime uint64) []byte {
 	seed := i2 + c3
 
 	h := sha256.New()
-	buf := make([]byte, 8)
-	binary.LittleEndian.PutUint64(buf, seed)
-	h.Write(buf)
+	var buf [8]byte
+	binary.LittleEndian.PutUint64(buf[:], seed)
+	h.Write(buf[:])
 	digest := h.Sum(nil)
 
 	return digest[16:]
@@ -528,9 +529,6 @@ func aesEncryptBlockV6Go(dst, input []byte) {
 		subBytes(state[:], false)
 		shiftRows(state[:], false)
 		mixColumns(state[:], false)
-		if patch := v6RoundPatch(i); patch != 0 {
-			state[0] ^= patch
-		}
 		addRoundKey(state[:], &roundKeys[i])
 	}
 
@@ -569,9 +567,6 @@ func aesDecryptBlockV6Go(dst, input []byte) {
 		shiftRows(state[:], true)
 		subBytes(state[:], true)
 		addRoundKey(state[:], &roundKeys[i])
-		if patch := v6RoundPatch(i); patch != 0 {
-			state[0] ^= patch
-		}
 		mixColumns(state[:], true)
 	}
 

@@ -43,9 +43,7 @@ func buildAsmRoundKeys(expandedKey []byte, rounds int, patchV6 bool) *asmRoundKe
 		copy(keys.enc[i][:], expandedKey[i*16:(i+1)*16])
 	}
 	if patchV6 {
-		for _, round := range [...]int{4, 6, 8} {
-			keys.enc[round][0] ^= v6RoundPatch(round)
-		}
+		applyV6RoundPatches(keys.enc[:rounds+1])
 	}
 	keys.dec[0] = keys.enc[rounds]
 	for i := 1; i < rounds; i++ {

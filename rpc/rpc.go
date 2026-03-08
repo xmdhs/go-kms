@@ -359,7 +359,7 @@ func BuildBindAckResponse(reqData []byte, port int, callID uint32) ([]byte, erro
 	pad := (4 - ((int(secondaryAddrLen) + 26) % 4)) % 4
 
 	// Build ctx item results.
-	var ctxResults []byte
+	ctxResults := make([]byte, int(bind.CtxNum)*CtxItemResultSize)
 	for i := 0; i < int(bind.CtxNum); i++ {
 		tsUUID := bind.CtxItems[i].TransferSyntaxUUID
 		var result CtxItemResult
@@ -385,12 +385,11 @@ func BuildBindAckResponse(reqData []byte, port int, callID uint32) ([]byte, erro
 				TransferSyntaxVer:  0,
 			}
 		}
-		resultBytes := make([]byte, CtxItemResultSize)
-		binary.LittleEndian.PutUint16(resultBytes[0:2], result.Result)
-		binary.LittleEndian.PutUint16(resultBytes[2:4], result.Reason)
-		copy(resultBytes[4:20], result.TransferSyntaxUUID[:])
-		binary.LittleEndian.PutUint32(resultBytes[20:24], result.TransferSyntaxVer)
-		ctxResults = append(ctxResults, resultBytes...)
+		resultOffset := i * CtxItemResultSize
+		binary.LittleEndian.PutUint16(ctxResults[resultOffset:resultOffset+2], result.Result)
+		binary.LittleEndian.PutUint16(ctxResults[resultOffset+2:resultOffset+4], result.Reason)
+		copy(ctxResults[resultOffset+4:resultOffset+20], result.TransferSyntaxUUID[:])
+		binary.LittleEndian.PutUint32(ctxResults[resultOffset+20:resultOffset+24], result.TransferSyntaxVer)
 	}
 
 	// Calculate total fragment length.

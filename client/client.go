@@ -2,7 +2,6 @@ package client
 
 import (
 	"bytes"
-	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
@@ -10,7 +9,6 @@ import (
 	"net"
 	"strings"
 	"time"
-	"unicode/utf16"
 
 	"github.com/xmdhs/go-kms/crypto"
 	"github.com/xmdhs/go-kms/kms"
@@ -196,17 +194,9 @@ func buildKMSRequest(product ProductInfo, cmid, machine string) ([]byte, error) 
 	kmsCountID := kms.MustUUID(product.KmsCountID)
 	clientMachineID := kms.MustUUID(cmid)
 
-	// Encode machine name to UTF-16LE with null terminator.
-	machineUTF16 := utf16.Encode([]rune(machine))
-	machineBytes := make([]byte, len(machineUTF16)*2+2) // +2 for UTF-16LE null terminator
-	for i, v := range machineUTF16 {
-		binary.LittleEndian.PutUint16(machineBytes[i*2:], v)
-	}
-	// machineBytes[len(machineUTF16)*2] and [len(machineUTF16)*2+1] are already 0 (null terminator)
-
 	// Pad to fill 128 bytes total (machineName + null + padding, matching py-kms 'u' format + mnPad).
 	paddedMachine := make([]byte, 128)
-	copy(paddedMachine, machineBytes)
+	copy(paddedMachine, kms.EncodeUTF16LE(machine))
 
 	now := time.Now().UTC()
 	requestTime := kms.TimeToFileTime(now)
@@ -295,13 +285,7 @@ func parseV4Response(data []byte) error {
 	if len(data) < 12 {
 		return fmt.Errorf("V4 response too short")
 	}
-	buf := bytes.NewReader(data)
-	var bodyLength1 uint32
-	var unknown uint32
-	var bodyLength2 uint32
-	binary.Read(buf, binary.LittleEndian, &bodyLength1)
-	binary.Read(buf, binary.LittleEndian, &unknown)
-	binary.Read(buf, binary.LittleEndian, &bodyLength2)
+	bodyLength2 := binary.LittleEndian.Uint32(data[8:12])
 
 	remaining := data[12:]
 	if int(bodyLength2) > len(remaining)+16 {
@@ -327,20 +311,11 @@ func parseV6Response(data []byte) error {
 }
 
 func parseV5V6Response(data []byte, isV6 bool) error {
-	if len(data) < 12 {
+	if len(data) < 16 {
 		return fmt.Errorf("V5/V6 response too short")
 	}
 
-	buf := bytes.NewReader(data)
-	var bodyLength1 uint32
-	var unknown uint32
-	var bodyLength2 uint32
-	var versionMinor, versionMajor uint16
-	binary.Read(buf, binary.LittleEndian, &bodyLength1)
-	binary.Read(buf, binary.LittleEndian, &unknown)
-	binary.Read(buf, binary.LittleEndian, &bodyLength2)
-	binary.Read(buf, binary.LittleEndian, &versionMinor)
-	binary.Read(buf, binary.LittleEndian, &versionMajor)
+	bodyLength1 := binary.LittleEndian.Uint32(data[0:4])
 
 	remaining := data[16:]
 	if len(remaining) < 16 {
@@ -410,8 +385,3 @@ func randomMachineName() string {
 	return strings.ToUpper(string(name))
 }
 
-// verifyV5Hash is used to verify the V5 response hash (not used in server-only mode).
-func verifyV5Hash(randomSalt, hashInResp []byte) bool {
-	expected := sha256.Sum256(randomSalt)
-	return bytes.Equal(expected[:], hashInResp)
-}
