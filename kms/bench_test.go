@@ -225,13 +225,6 @@ func BenchmarkV6Cycle(b *testing.B) {
 }
 
 // Benchmark for MachineName String conversion
-func BenchmarkMachineName_String(b *testing.B) {
-	machineName := MachineName{MachineNameRaw: EncodeUTF16LE("TEST-MACHINE-001")}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_ = machineName.String()
-	}
-}
 
 // Benchmark for ParseGenericRequestHeader
 func BenchmarkParseGenericRequestHeader(b *testing.B) {

@@ -170,7 +170,7 @@ func aesDecryptCBCV6(data, iv []byte) ([]byte, error) {
 }
 
 // V4Hash computes the KMS V4 hash (custom AES-CMAC variant with 160-bit key).
-func V4Hash(message []byte) []byte {
+func V4Hash(message []byte) [16]byte {
 	messageSize := len(message)
 	var hashBuffer [16]byte
 	var encrypted [16]byte
@@ -201,11 +201,7 @@ func V4Hash(message []byte) []byte {
 		hashBuffer[b] ^= lastBlock[b]
 	}
 	aesEncryptBlockV4InPlace(encrypted[:], hashBuffer[:])
-	hashBuffer = encrypted
-
-	output := make([]byte, 16)
-	copy(output, hashBuffer[:])
-	return output
+	return encrypted
 }
 
 // RandomSalt generates a 16-byte random salt.
@@ -215,8 +211,8 @@ func RandomSalt() []byte {
 	return salt
 }
 
-// V6MACKey derives the HMAC key from the request timestamp.
-func V6MACKey(requestTime uint64) []byte {
+// V6MACKey derives the HMAC key from the request timestamp as a fixed-size array.
+func V6MACKey(requestTime uint64) [16]byte {
 	c1 := uint64(0x00000022816889BD)
 	c2 := uint64(0x000000208CBAB5ED)
 	c3 := uint64(0x3156CD5AC628477A)
@@ -225,20 +221,27 @@ func V6MACKey(requestTime uint64) []byte {
 	i2 := i1 * c2
 	seed := i2 + c3
 
-	h := sha256.New()
 	var buf [8]byte
 	binary.LittleEndian.PutUint64(buf[:], seed)
-	h.Write(buf[:])
-	digest := h.Sum(nil)
-
-	return digest[16:]
+	digest := sha256.Sum256(buf[:])
+	var key [16]byte
+	copy(key[:], digest[16:])
+	return key
 }
 
 // V6HMAC computes the HMAC-SHA256 for V6 response.
-func V6HMAC(macKey, data []byte) []byte {
+func V6HMAC(macKey, data []byte) [32]byte {
+	return V6HMACParts(macKey, data)
+}
+
+func V6HMACParts(macKey []byte, parts ...[]byte) [32]byte {
 	h := hmac.New(sha256.New, macKey)
-	h.Write(data)
-	return h.Sum(nil)
+	for _, part := range parts {
+		h.Write(part)
+	}
+	var digest [32]byte
+	h.Sum(digest[:0])
+	return digest
 }
 
 // --- Custom AES implementation for V4 (160-bit key) and V6 (round patches) ---

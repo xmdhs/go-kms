@@ -122,7 +122,7 @@ func TestV4HashDeterministic(t *testing.T) {
 	input := []byte("fixed-v4-hash-input")
 	h1 := V4Hash(input)
 	h2 := V4Hash(input)
-	if !bytes.Equal(h1, h2) {
+	if h1 != h2 {
 		t.Fatalf("V4Hash not deterministic: %x != %x", h1, h2)
 	}
 }
@@ -177,9 +177,9 @@ func TestStableVectorsMatchBaseline(t *testing.T) {
 
 	h := V4Hash([]byte("baseline-v4-hash-input"))
 	k := V6MACKey(13322345678901234567)
-	m := V6HMAC(k, []byte("baseline-v6-hmac-input"))
+	m := V6HMAC(k[:], []byte("baseline-v6-hmac-input"))
 
-	checkHex("V4HASH", h, "7f2db248dc798b8bc805f6e330a9b06b")
-	checkHex("V6MACKEY", k, "8012fac9c77fb0f401b438c8b96f4e1d")
-	checkHex("V6HMAC", m, "27214d078c7f492a71a86a75ccc0f83a31fcf1f29529689c5a4add1ddd17a148")
+	checkHex("V4HASH", h[:], "7f2db248dc798b8bc805f6e330a9b06b")
+	checkHex("V6MACKEY", k[:], "8012fac9c77fb0f401b438c8b96f4e1d")
+	checkHex("V6HMAC", m[:], "27214d078c7f492a71a86a75ccc0f83a31fcf1f29529689c5a4add1ddd17a148")
 }

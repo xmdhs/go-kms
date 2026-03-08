@@ -230,7 +230,7 @@ func BenchmarkV6EncryptWithHMAC(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		encrypted, _ := KMSEncryptCBC(data, iv, true)
-		_ = V6HMAC(macKey, encrypted)
+		_ = V6HMACParts(macKey, encrypted)
 	}
 }
 

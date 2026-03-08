@@ -227,7 +227,7 @@ func buildV4ClientRequest(kmsData []byte) []byte {
 	binary.Write(&buf, binary.LittleEndian, bodyLength)
 	binary.Write(&buf, binary.LittleEndian, bodyLength)
 	buf.Write(kmsData)
-	buf.Write(hash)
+	buf.Write(hash[:])
 	buf.Write(padding)
 	return buf.Bytes()
 }

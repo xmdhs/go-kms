@@ -47,7 +47,7 @@ func BenchmarkRecvAllInto(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		conn.reader.Reset(packet)
 		conn.writer.Reset()
-		recvAllInto(conn, buf)
+		rpc.RecvAllInto(conn, buf, maxFragLen)
 	}
 }
 
@@ -61,7 +61,7 @@ func BenchmarkRecvAll(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		conn.reader.Reset(packet)
 		conn.writer.Reset()
-		RecvAll(conn)
+		rpc.RecvAll(conn, maxFragLen)
 	}
 }
 

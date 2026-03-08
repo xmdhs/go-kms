@@ -2,7 +2,6 @@ package kms
 
 import (
 	"context"
-	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
@@ -62,7 +61,7 @@ func HandleV4Request(ctx context.Context, data []byte, config *ServerConfig) ([]
 	offset += 4
 	copy(resp[offset:], responseBytes)
 	offset += len(responseBytes)
-	copy(resp[offset:], theHash)
+	copy(resp[offset:], theHash[:])
 	offset += len(theHash)
 	copy(resp[offset:], padding)
 
@@ -155,14 +154,11 @@ func handleV5V6Request(ctx context.Context, data []byte, header *GenericRequestH
 
 		// HMacKey from request time.
 		hmacKey := crypto.V6MACKey(kmsRequest.RequestTime)
-		h := hmac.New(sha256.New, hmacKey)
 		var xorSalts [16]byte
 		for i := range 16 {
 			xorSalts[i] = saltS[i] ^ dsaltS[i]
 		}
-		h.Write(xorSalts[:])
-		h.Write(messageBytes)
-		hmacDigest := h.Sum(nil)
+		hmacDigest := crypto.V6HMACParts(hmacKey[:], xorSalts[:], messageBytes)
 
 		// Build full decrypted response: messageBytes + hmacDigest[16:]
 		messageBytes = append(messageBytes, hmacDigest[16:]...)

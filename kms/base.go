@@ -148,26 +148,6 @@ type KMSRequest struct {
 	MachineNameRaw          []byte // UTF-16LE encoded, padded to 126 bytes total
 }
 
-type MachineName struct {
-	MachineNameRaw []byte
-}
-
-func (r MachineName) String() string {
-	raw := r.MachineNameRaw
-	for i := 0; i < len(raw)-1; i += 2 {
-		if raw[i] == 0 && raw[i+1] == 0 {
-			raw = raw[:i]
-			break
-		}
-	}
-	// Decode UTF-16LE.
-	u16s := make([]uint16, len(raw)/2)
-	for i := range u16s {
-		u16s[i] = binary.LittleEndian.Uint16(raw[i*2:])
-	}
-	return string(utf16.Decode(u16s))
-}
-
 func ParseKMSRequest(data []byte) (*KMSRequest, error) {
 	const fixedSize = 108 // 2+2+4+4+4+16+16+16+16+4+8+16
 	if len(data) < fixedSize {
@@ -425,7 +405,7 @@ func ServerLogic(ctx context.Context, kmsRequest *KMSRequest, config *ServerConf
 	})
 
 	logger.LogAttrs(ctx, slog.LevelDebug, "Response",
-		slog.Any("Machine Name", MachineName{kmsRequest.MachineNameRaw}),
+		slog.Any("Machine Name", DecodeUTF16LE(kmsRequest.MachineNameRaw)),
 		slog.Any("Client Machine ID", kmsRequest.ClientMachineID),
 		slog.Any("Application ID", kmsRequest.ApplicationID),
 		slog.Any("SKU ID", kmsRequest.SKUID),

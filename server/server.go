@@ -158,12 +158,3 @@ func (s *KMSServer) handleConnection(conn net.Conn) {
 	logger.LogAttrs(ctx, slog.LevelInfo, "Connection closed", slog.String("remote_addr", remoteAddr))
 }
 
-// recvAllInto reads a complete RPC message into the provided buffer (zero-allocation read).
-func recvAllInto(conn net.Conn, buf []byte) ([]byte, error) {
-	return rpc.RecvAllInto(conn, buf, maxFragLen)
-}
-
-// RecvAll reads from conn until we have a complete RPC message.
-func RecvAll(conn net.Conn) ([]byte, error) {
-	return rpc.RecvAll(conn, maxFragLen)
-}

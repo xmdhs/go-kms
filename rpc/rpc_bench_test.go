@@ -13,20 +13,6 @@ func buildTestBindRequest() []byte {
 	return req
 }
 
-// buildTestRPCRequest creates a valid RPC request for benchmarking.
-func buildTestRPCRequest(kmsData []byte) []byte {
-	return BuildRPCRequest(kmsData, 1)
-}
-
-// buildTestRPCResponse creates a valid RPC response for benchmarking.
-func buildTestRPCResponse() ([]byte, *MSRPCRequestHeader) {
-	kmsData := make([]byte, 100)
-	req := BuildRPCRequest(kmsData, 1)
-	reqHeader, _ := ParseMSRPCRequestHeader(req)
-	resp := BuildMSRPCResponse(reqHeader, kmsData)
-	return resp, reqHeader
-}
-
 func TestBuildBindAckResponseRejectsInvalidAuthLen(t *testing.T) {
 	data := make([]byte, MSRPCHeaderSize)
 	data[0] = 5
