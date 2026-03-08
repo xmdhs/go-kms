@@ -13,7 +13,6 @@ import (
 	"github.com/xmdhs/go-kms/crypto"
 	"github.com/xmdhs/go-kms/kms"
 	"github.com/xmdhs/go-kms/rpc"
-	"github.com/xmdhs/go-kms/server"
 )
 
 // ClientConfig holds client configuration.
@@ -117,7 +116,7 @@ func Run(config *ClientConfig) error {
 	}
 
 	// Receive BIND ACK.
-	bindAck, err := server.RecvAll(conn)
+	bindAck, err := rpc.RecvAll(conn, 1024)
 	if err != nil {
 		return fmt.Errorf("failed to receive bind ack: %w", err)
 	}
@@ -160,7 +159,7 @@ func Run(config *ClientConfig) error {
 	}
 
 	// Receive response.
-	respData, err := server.RecvAll(conn)
+	respData, err := rpc.RecvAll(conn, 1024)
 	if err != nil {
 		return fmt.Errorf("failed to receive response: %w", err)
 	}
@@ -288,11 +287,11 @@ func parseV4Response(data []byte) error {
 	bodyLength2 := binary.LittleEndian.Uint32(data[8:12])
 
 	remaining := data[12:]
-	if int(bodyLength2) > len(remaining)+16 {
+	if bodyLength2 < 16 || int(bodyLength2) > len(remaining) {
 		return fmt.Errorf("V4 response body too short")
 	}
 
-	responseData := remaining[:bodyLength2-16]
+	responseData := remaining[:int(bodyLength2)-16]
 	resp, err := kms.ParseKMSResponse(responseData)
 	if err != nil {
 		return fmt.Errorf("failed to parse KMS response: %w", err)
@@ -384,4 +383,3 @@ func randomMachineName() string {
 	}
 	return strings.ToUpper(string(name))
 }
-

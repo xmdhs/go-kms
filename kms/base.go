@@ -8,7 +8,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
-	"sync/atomic"
+	"sync"
 	"unicode/utf16"
 
 	"github.com/xmdhs/go-kms/logger"
@@ -202,8 +202,7 @@ func ParseKMSRequest(data []byte) (*KMSRequest, error) {
 	offset += 16
 
 	if len(data) > offset {
-		r.MachineNameRaw = make([]byte, len(data)-offset)
-		copy(r.MachineNameRaw, data[offset:])
+		r.MachineNameRaw = data[offset:]
 	}
 
 	return r, nil
@@ -374,6 +373,9 @@ type ServerConfig struct {
 	SQLite      bool
 	LogLevel    string
 	Logger      *slog.Logger
+
+	epidOnce sync.Once
+	epid     []byte
 }
 
 func DefaultServerConfig() *ServerConfig {
@@ -393,8 +395,6 @@ func DefaultServerConfig() *ServerConfig {
 func GetPadding(bodyLength int) int {
 	return 4 + (((^bodyLength & 3) + 1) & 3)
 }
-
-var epid atomic.Pointer[[]byte]
 
 // ServerLogic processes a KMS request and generates a response.
 func ServerLogic(ctx context.Context, kmsRequest *KMSRequest, config *ServerConfig) *KMSResponse {
@@ -416,17 +416,13 @@ func ServerLogic(ctx context.Context, kmsRequest *KMSRequest, config *ServerConf
 		currentClientCount = requiredClients
 	}
 
-	epidB := epid.Load()
-	if epidB == nil {
+	config.epidOnce.Do(func() {
 		if config.EPID == "" {
-			b := EncodeUTF16LE(RandomUUID().String())
-			epid.CompareAndSwap(epidB, &b)
-		} else {
-			b := EncodeUTF16LE(config.EPID)
-			epid.CompareAndSwap(epidB, &b)
+			config.epid = EncodeUTF16LE(RandomUUID().String())
+			return
 		}
-
-	}
+		config.epid = EncodeUTF16LE(config.EPID)
+	})
 
 	logger.LogAttrs(ctx, slog.LevelDebug, "Response",
 		slog.Any("Machine Name", MachineName{kmsRequest.MachineNameRaw}),
@@ -441,7 +437,7 @@ func ServerLogic(ctx context.Context, kmsRequest *KMSRequest, config *ServerConf
 	response := &KMSResponse{
 		VersionMinor:         kmsRequest.VersionMinor,
 		VersionMajor:         kmsRequest.VersionMajor,
-		KMSEpid:              *epid.Load(),
+		KMSEpid:              config.epid,
 		ClientMachineID:      kmsRequest.ClientMachineID,
 		ResponseTime:         kmsRequest.RequestTime,
 		CurrentClientCount:   currentClientCount,
@@ -492,9 +488,9 @@ func GenerateKMSResponseData(ctx context.Context, data []byte, config *ServerCon
 	case 4:
 		return HandleV4Request(ctx, data, config)
 	case 5:
-		return HandleV5Request(ctx, data, config)
+		return HandleV5Request(ctx, data, header, config)
 	case 6:
-		return HandleV6Request(ctx, data, config)
+		return HandleV6Request(ctx, data, header, config)
 	default:
 		logger.LogAttrs(ctx, slog.LevelWarn, "Unhandled KMS version", slog.Uint64("version", uint64(version)))
 		return HandleUnknownRequest()

@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"io"
+	"net"
 )
 
 // MS-RPC packet type constants.
@@ -145,24 +147,12 @@ func ParseMSRPCRequestHeader(data []byte) (*MSRPCRequestHeader, error) {
 	if len(data) < MSRPCRequestHeaderSize {
 		return nil, fmt.Errorf("data too short for RPC request header: %d", len(data))
 	}
-	offset := 0
-	h := &MSRPCRequestHeader{}
-	h.VerMajor = data[offset]
-	offset++
-	h.VerMinor = data[offset]
-	offset++
-	h.Type = data[offset]
-	offset++
-	h.Flags = data[offset]
-	offset++
-	h.Representation = binary.LittleEndian.Uint32(data[offset : offset+4])
-	offset += 4
-	h.FragLen = binary.LittleEndian.Uint16(data[offset : offset+2])
-	offset += 2
-	h.AuthLen = binary.LittleEndian.Uint16(data[offset : offset+2])
-	offset += 2
-	h.CallID = binary.LittleEndian.Uint32(data[offset : offset+4])
-	offset += 4
+	hdr, err := ParseMSRPCHeader(data)
+	if err != nil {
+		return nil, err
+	}
+	offset := MSRPCHeaderSize
+	h := &MSRPCRequestHeader{MSRPCHeader: *hdr}
 	h.AllocHint = binary.LittleEndian.Uint32(data[offset : offset+4])
 	offset += 4
 	h.CtxID = binary.LittleEndian.Uint16(data[offset : offset+2])
@@ -222,35 +212,64 @@ func BuildMSRPCResponse(reqHeader *MSRPCRequestHeader, pduData []byte) []byte {
 		Padding:     0,
 	}
 
-	respBytes := make([]byte, MSRPCRespHeaderSize)
-	offset := 0
-	respBytes[offset] = resp.VerMajor
-	offset++
-	respBytes[offset] = resp.VerMinor
-	offset++
-	respBytes[offset] = resp.Type
-	offset++
-	respBytes[offset] = resp.Flags
-	offset++
-	binary.LittleEndian.PutUint32(respBytes[offset:offset+4], resp.Representation)
-	offset += 4
-	binary.LittleEndian.PutUint16(respBytes[offset:offset+2], resp.FragLen)
-	offset += 2
-	binary.LittleEndian.PutUint16(respBytes[offset:offset+2], resp.AuthLen)
-	offset += 2
-	binary.LittleEndian.PutUint32(respBytes[offset:offset+4], resp.CallID)
-	offset += 4
-	binary.LittleEndian.PutUint32(respBytes[offset:offset+4], resp.AllocHint)
-	offset += 4
-	binary.LittleEndian.PutUint16(respBytes[offset:offset+2], resp.CtxID)
-	offset += 2
-	respBytes[offset] = resp.CancelCount
-	offset++
-	respBytes[offset] = resp.Padding
 	result := make([]byte, MSRPCRespHeaderSize+len(pduData))
-	copy(result, respBytes)
+	offset := 0
+	result[offset] = resp.VerMajor
+	offset++
+	result[offset] = resp.VerMinor
+	offset++
+	result[offset] = resp.Type
+	offset++
+	result[offset] = resp.Flags
+	offset++
+	binary.LittleEndian.PutUint32(result[offset:offset+4], resp.Representation)
+	offset += 4
+	binary.LittleEndian.PutUint16(result[offset:offset+2], resp.FragLen)
+	offset += 2
+	binary.LittleEndian.PutUint16(result[offset:offset+2], resp.AuthLen)
+	offset += 2
+	binary.LittleEndian.PutUint32(result[offset:offset+4], resp.CallID)
+	offset += 4
+	binary.LittleEndian.PutUint32(result[offset:offset+4], resp.AllocHint)
+	offset += 4
+	binary.LittleEndian.PutUint16(result[offset:offset+2], resp.CtxID)
+	offset += 2
+	result[offset] = resp.CancelCount
+	offset++
+	result[offset] = resp.Padding
 	copy(result[MSRPCRespHeaderSize:], pduData)
 	return result
+}
+
+func RecvAllInto(conn net.Conn, buf []byte, maxFragLen uint16) ([]byte, error) {
+	if _, err := io.ReadFull(conn, buf[:MSRPCHeaderSize]); err != nil {
+		return nil, err
+	}
+
+	fragLen := binary.LittleEndian.Uint16(buf[8:10])
+	if fragLen > maxFragLen {
+		return nil, fmt.Errorf("fragment length %d exceeds maximum allowed %d", fragLen, maxFragLen)
+	}
+	if fragLen <= MSRPCHeaderSize {
+		return buf[:MSRPCHeaderSize], nil
+	}
+
+	if _, err := io.ReadFull(conn, buf[MSRPCHeaderSize:fragLen]); err != nil {
+		return nil, err
+	}
+	return buf[:fragLen], nil
+}
+
+// RecvAll reads from conn until we have a complete RPC message.
+func RecvAll(conn net.Conn, maxFragLen uint16) ([]byte, error) {
+	buf := make([]byte, maxFragLen)
+	data, err := RecvAllInto(conn, buf, maxFragLen)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]byte, len(data))
+	copy(result, data)
+	return result, nil
 }
 
 // BindRequest represents an RPC BIND request body.

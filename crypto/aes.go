@@ -1,7 +1,6 @@
 package crypto
 
 import (
-	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/hmac"
@@ -20,8 +19,12 @@ type asmRoundKeys struct {
 // PKCS7Pad pads data to a multiple of blockSize using PKCS7.
 func PKCS7Pad(data []byte, blockSize int) []byte {
 	padding := blockSize - len(data)%blockSize
-	padBytes := bytes.Repeat([]byte{byte(padding)}, padding)
-	return append(data, padBytes...)
+	out := make([]byte, len(data)+padding)
+	copy(out, data)
+	for i := len(data); i < len(out); i++ {
+		out[i] = byte(padding)
+	}
+	return out
 }
 
 // PKCS7Unpad removes PKCS7 padding.
@@ -568,4 +571,3 @@ func aesDecryptBlockV6Go(dst, input []byte) {
 		}
 	}
 }
-

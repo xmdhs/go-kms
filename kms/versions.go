@@ -2,6 +2,7 @@ package kms
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
@@ -70,29 +71,20 @@ func HandleV4Request(ctx context.Context, data []byte, config *ServerConfig) ([]
 }
 
 // HandleV5Request processes a KMS V5 request.
-func HandleV5Request(ctx context.Context, data []byte, config *ServerConfig) ([]byte, error) {
-	return handleV5V6Request(ctx, data, config, false)
+func HandleV5Request(ctx context.Context, data []byte, header *GenericRequestHeader, config *ServerConfig) ([]byte, error) {
+	return handleV5V6Request(ctx, data, header, config, false)
 }
 
 // HandleV6Request processes a KMS V6 request.
-func HandleV6Request(ctx context.Context, data []byte, config *ServerConfig) ([]byte, error) {
-	return handleV5V6Request(ctx, data, config, true)
+func HandleV6Request(ctx context.Context, data []byte, header *GenericRequestHeader, config *ServerConfig) ([]byte, error) {
+	return handleV5V6Request(ctx, data, header, config, true)
 }
 
-func handleV5V6Request(ctx context.Context, data []byte, config *ServerConfig, isV6 bool) ([]byte, error) {
-	// Parse request header.
-	if len(data) < 12 {
-		return nil, fmt.Errorf("V5/V6 request too short")
-	}
-
-	offset := 0
-	bodyLength1 := binary.LittleEndian.Uint32(data[offset:])
-	offset += 4
-	offset += 4 // skip bodyLength2
-	versionMinor := binary.LittleEndian.Uint16(data[offset:])
-	offset += 2
-	versionMajor := binary.LittleEndian.Uint16(data[offset:])
-	offset += 2
+func handleV5V6Request(ctx context.Context, data []byte, header *GenericRequestHeader, config *ServerConfig, isV6 bool) ([]byte, error) {
+	const offset = 12
+	bodyLength1 := header.BodyLength1
+	versionMinor := header.VersionMinor
+	versionMajor := header.VersionMajor
 
 	// Message data starts after bodyLength1(4) + bodyLength2(4) + versionMinor(2) + versionMajor(2)
 	messageData := data[offset:]
@@ -138,7 +130,7 @@ func handleV5V6Request(ctx context.Context, data []byte, config *ServerConfig, i
 	if isV6 {
 		// Build messageBytes: response + randomStuff(16) + hash(32) + hwid + xorSalts(16)
 		msgLen := len(responseBytes) + 16 + 32 + len(config.HWID) + 16
-		messageBytes := make([]byte, msgLen)
+		messageBytes := make([]byte, msgLen, msgLen+16)
 		off := copy(messageBytes, responseBytes)
 		// Compute randomStuff directly into messageBytes.
 		for i := range 16 {
@@ -161,24 +153,22 @@ func handleV5V6Request(ctx context.Context, data []byte, config *ServerConfig, i
 			return nil, fmt.Errorf("failed to generate DSaltS: %w", err)
 		}
 
-		// HMacMsg = (SaltS ^ DSaltS) + messageBytes
-		hmacMsg := make([]byte, 16+len(messageBytes))
-		for i := range 16 {
-			hmacMsg[i] = saltS[i] ^ dsaltS[i]
-		}
-		copy(hmacMsg[16:], messageBytes)
-
 		// HMacKey from request time.
 		hmacKey := crypto.V6MACKey(kmsRequest.RequestTime)
-		hmacDigest := crypto.V6HMAC(hmacKey, hmacMsg)
+		h := hmac.New(sha256.New, hmacKey)
+		var xorSalts [16]byte
+		for i := range 16 {
+			xorSalts[i] = saltS[i] ^ dsaltS[i]
+		}
+		h.Write(xorSalts[:])
+		h.Write(messageBytes)
+		hmacDigest := h.Sum(nil)
 
 		// Build full decrypted response: messageBytes + hmacDigest[16:]
-		responseDataBuf := make([]byte, len(messageBytes)+16)
-		copy(responseDataBuf, messageBytes)
-		copy(responseDataBuf[len(messageBytes):], hmacDigest[16:])
+		messageBytes = append(messageBytes, hmacDigest[16:]...)
 
 		// Encrypt with SaltS as IV.
-		padded := crypto.PKCS7Pad(responseDataBuf, 16)
+		padded := crypto.PKCS7Pad(messageBytes, 16)
 		encryptedResp, err := crypto.KMSEncryptCBC(padded, saltS, true)
 		if err != nil {
 			return nil, fmt.Errorf("failed to encrypt V6 response: %w", err)

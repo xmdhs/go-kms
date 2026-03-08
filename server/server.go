@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -82,7 +81,7 @@ func (s *KMSServer) handleConnection(conn net.Conn) {
 
 	for {
 		// Read a complete RPC message using frag_len from the header.
-		data, err := recvAllInto(conn, *bufp)
+		data, err := rpc.RecvAllInto(conn, *bufp, maxFragLen)
 		if err != nil {
 			if err != io.EOF {
 				logger.LogAttrs(ctx, slog.LevelWarn, "Error reading from connection", slog.String("remote_addr", remoteAddr), slog.Any("error", err))
@@ -161,45 +160,10 @@ func (s *KMSServer) handleConnection(conn net.Conn) {
 
 // recvAllInto reads a complete RPC message into the provided buffer (zero-allocation read).
 func recvAllInto(conn net.Conn, buf []byte) ([]byte, error) {
-	if _, err := io.ReadFull(conn, buf[:rpc.MSRPCHeaderSize]); err != nil {
-		return nil, err
-	}
-
-	fragLen := binary.LittleEndian.Uint16(buf[8:10])
-	if fragLen > maxFragLen {
-		return nil, fmt.Errorf("fragment length %d exceeds maximum allowed %d", fragLen, maxFragLen)
-	}
-	if fragLen <= rpc.MSRPCHeaderSize {
-		return buf[:rpc.MSRPCHeaderSize], nil
-	}
-
-	if _, err := io.ReadFull(conn, buf[rpc.MSRPCHeaderSize:fragLen]); err != nil {
-		return nil, err
-	}
-	return buf[:fragLen], nil
+	return rpc.RecvAllInto(conn, buf, maxFragLen)
 }
 
 // RecvAll reads from conn until we have a complete RPC message.
 func RecvAll(conn net.Conn) ([]byte, error) {
-	// First read the header to get fragment length.
-	headerBuf := make([]byte, rpc.MSRPCHeaderSize)
-	if _, err := io.ReadFull(conn, headerBuf); err != nil {
-		return nil, err
-	}
-
-	fragLen := binary.LittleEndian.Uint16(headerBuf[8:10])
-	if fragLen > maxFragLen {
-		return nil, fmt.Errorf("fragment length %d exceeds maximum allowed %d", fragLen, maxFragLen)
-	}
-	if fragLen <= rpc.MSRPCHeaderSize {
-		return headerBuf, nil
-	}
-
-	// Single allocation for the full message.
-	buf := make([]byte, fragLen)
-	copy(buf, headerBuf)
-	if _, err := io.ReadFull(conn, buf[rpc.MSRPCHeaderSize:]); err != nil {
-		return nil, err
-	}
-	return buf, nil
+	return rpc.RecvAll(conn, maxFragLen)
 }

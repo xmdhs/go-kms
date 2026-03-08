@@ -326,10 +326,11 @@ func BenchmarkFullServerFlow_V5(b *testing.B) {
 	offset += 2
 	copy(packet[offset:], encrypted)
 
+	header, _ := ParseGenericRequestHeader(packet)
 	ctx := context.Background()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		HandleV5Request(ctx, packet, config)
+		HandleV5Request(ctx, packet, header, config)
 	}
 }
 
@@ -372,9 +373,10 @@ func BenchmarkFullServerFlow_V6(b *testing.B) {
 	offset += 2
 	copy(packet[offset:], encrypted)
 
+	header, _ := ParseGenericRequestHeader(packet)
 	ctx := context.Background()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		HandleV6Request(ctx, packet, config)
+		HandleV6Request(ctx, packet, header, config)
 	}
 }
