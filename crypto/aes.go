@@ -73,6 +73,10 @@ var (
 	v4RoundKeys = sync.OnceValue(func() [][16]byte {
 		return buildRoundKeys(expandKey(V4Key, 20, 192), 11)
 	})
+	aesEncryptBlockV4Impl = aesEncryptBlockV4Go
+	aesDecryptBlockV4Impl = aesDecryptBlockV4Go
+	aesEncryptBlockV6Impl = aesEncryptBlockV6Go
+	aesDecryptBlockV6Impl = aesDecryptBlockV6Go
 )
 
 // KMSEncryptCBC encrypts KMS V5/V6 payload data using protocol-defined AES-CBC.
@@ -436,11 +440,7 @@ func addRoundKey(state []byte, roundKey *[16]byte) {
 }
 
 func aesEncryptBlockV4InPlace(dst, input []byte) {
-	if aesAsmAvailable() {
-		aesEncryptBlockAsm(11, &v4AsmKeys().enc[0], dst, input)
-		return
-	}
-	aesEncryptBlockV4Go(dst, input)
+	aesEncryptBlockV4Impl(dst, input)
 }
 
 func aesEncryptBlockV4Go(dst, input []byte) {
@@ -471,11 +471,7 @@ func aesEncryptBlockV4Go(dst, input []byte) {
 }
 
 func aesDecryptBlockV4InPlace(dst, input []byte) {
-	if aesAsmAvailable() {
-		aesDecryptBlockAsm(11, &v4AsmKeys().dec[0], dst, input)
-		return
-	}
-	aesDecryptBlockV4Go(dst, input)
+	aesDecryptBlockV4Impl(dst, input)
 }
 
 func aesDecryptBlockV4Go(dst, input []byte) {
@@ -507,11 +503,7 @@ func aesDecryptBlockV4Go(dst, input []byte) {
 
 // aesEncryptBlockV6InPlace encrypts a single block using AES-128 with V6 round patches.
 func aesEncryptBlockV6InPlace(dst, input []byte) {
-	if aesAsmAvailable() {
-		aesEncryptBlockAsm(10, &v6AsmKeys().enc[0], dst, input)
-		return
-	}
-	aesEncryptBlockV6Go(dst, input)
+	aesEncryptBlockV6Impl(dst, input)
 }
 
 func aesEncryptBlockV6Go(dst, input []byte) {
@@ -545,11 +537,7 @@ func aesEncryptBlockV6Go(dst, input []byte) {
 
 // aesDecryptBlockV6InPlace decrypts a single block using AES-128 with V6 round patches.
 func aesDecryptBlockV6InPlace(dst, input []byte) {
-	if aesAsmAvailable() {
-		aesDecryptBlockAsm(10, &v6AsmKeys().dec[0], dst, input)
-		return
-	}
-	aesDecryptBlockV6Go(dst, input)
+	aesDecryptBlockV6Impl(dst, input)
 }
 
 func aesDecryptBlockV6Go(dst, input []byte) {

@@ -16,8 +16,24 @@ var (
 	})
 )
 
-func aesAsmAvailable() bool {
-	return aesAsmEnabled()
+func init() {
+	if !aesAsmEnabled() {
+		return
+	}
+	v4Keys := v4AsmRoundKeys()
+	v6Keys := v6AsmRoundKeys()
+	aesEncryptBlockV4Impl = func(dst, input []byte) {
+		aesEncryptBlockAsm(11, &v4Keys.enc[0], dst, input)
+	}
+	aesDecryptBlockV4Impl = func(dst, input []byte) {
+		aesDecryptBlockAsm(11, &v4Keys.dec[0], dst, input)
+	}
+	aesEncryptBlockV6Impl = func(dst, input []byte) {
+		aesEncryptBlockAsm(10, &v6Keys.enc[0], dst, input)
+	}
+	aesDecryptBlockV6Impl = func(dst, input []byte) {
+		aesDecryptBlockAsm(10, &v6Keys.dec[0], dst, input)
+	}
 }
 
 //go:noescape
@@ -28,14 +44,6 @@ func aesEncryptBlockAsm(rounds int, roundKeys *[16]byte, dst, input []byte)
 
 //go:noescape
 func aesDecryptBlockAsm(rounds int, roundKeys *[16]byte, dst, input []byte)
-
-func v4AsmKeys() *asmRoundKeys {
-	return v4AsmRoundKeys()
-}
-
-func v6AsmKeys() *asmRoundKeys {
-	return v6AsmRoundKeys()
-}
 
 func buildAsmRoundKeys(expandedKey []byte, rounds int, patchV6 bool) *asmRoundKeys {
 	keys := &asmRoundKeys{}
