@@ -12,6 +12,11 @@ import (
 	"sync"
 )
 
+type asmRoundKeys struct {
+	enc [12][16]byte
+	dec [12][16]byte
+}
+
 // PKCS7Pad pads data to a multiple of blockSize using PKCS7.
 func PKCS7Pad(data []byte, blockSize int) []byte {
 	padding := blockSize - len(data)%blockSize
@@ -429,39 +434,6 @@ func addRoundKey(state []byte, roundKey *[16]byte) {
 	}
 }
 
-func aesEncryptBlockCustomInPlace(dst, input []byte, roundKeys [][16]byte, nbrRounds int) {
-	// Map input to state (column-major).
-	var state [16]byte
-	for i := range 4 {
-		for j := range 4 {
-			state[i+j*4] = input[i*4+j]
-		}
-	}
-
-	// Initial round key addition.
-	addRoundKey(state[:], &roundKeys[0])
-
-	// Main rounds.
-	for i := 1; i < nbrRounds; i++ {
-		subBytes(state[:], false)
-		shiftRows(state[:], false)
-		mixColumns(state[:], false)
-		addRoundKey(state[:], &roundKeys[i])
-	}
-
-	// Final round (no mixColumns).
-	subBytes(state[:], false)
-	shiftRows(state[:], false)
-	addRoundKey(state[:], &roundKeys[nbrRounds])
-
-	// Unmap state to output.
-	for i := range 4 {
-		for j := range 4 {
-			dst[i*4+j] = state[i+j*4]
-		}
-	}
-}
-
 func aesEncryptBlockV4InPlace(dst, input []byte) {
 	if aesAsmAvailable() {
 		aesEncryptBlockAsm(11, &v4AsmKeys().enc[0], dst, input)
@@ -489,47 +461,6 @@ func aesEncryptBlockV4Go(dst, input []byte) {
 	subBytes(state[:], false)
 	shiftRows(state[:], false)
 	addRoundKey(state[:], &roundKeys[11])
-
-	for i := range 4 {
-		for j := range 4 {
-			dst[i*4+j] = state[i+j*4]
-		}
-	}
-}
-
-func aesEncryptBlockCustom(input []byte, keySize int) []byte {
-	output := make([]byte, 16)
-	switch keySize {
-	case 16:
-		aesEncryptBlockCustomInPlace(output, input, v5RoundKeys(), 10)
-	case 20:
-		aesEncryptBlockV4InPlace(output, input)
-	default:
-		panic(fmt.Sprintf("invalid key size: %d", keySize))
-	}
-	return output
-}
-
-func aesDecryptBlockCustomInPlace(dst, input []byte, roundKeys [][16]byte, nbrRounds int) {
-	var state [16]byte
-	for i := range 4 {
-		for j := range 4 {
-			state[i+j*4] = input[i*4+j]
-		}
-	}
-
-	addRoundKey(state[:], &roundKeys[nbrRounds])
-
-	for i := nbrRounds - 1; i > 0; i-- {
-		shiftRows(state[:], true)
-		subBytes(state[:], true)
-		addRoundKey(state[:], &roundKeys[i])
-		mixColumns(state[:], true)
-	}
-
-	shiftRows(state[:], true)
-	subBytes(state[:], true)
-	addRoundKey(state[:], &roundKeys[0])
 
 	for i := range 4 {
 		for j := range 4 {
@@ -573,20 +504,7 @@ func aesDecryptBlockV4Go(dst, input []byte) {
 	}
 }
 
-func aesDecryptBlockCustom(input []byte, keySize int) []byte {
-	output := make([]byte, 16)
-	switch keySize {
-	case 16:
-		aesDecryptBlockCustomInPlace(output, input, v5RoundKeys(), 10)
-	case 20:
-		aesDecryptBlockV4InPlace(output, input)
-	default:
-		panic(fmt.Sprintf("invalid key size: %d", keySize))
-	}
-	return output
-}
-
-// aesEncryptBlockV6 encrypts a single block using AES-128 with V6 round patches.
+// aesEncryptBlockV6InPlace encrypts a single block using AES-128 with V6 round patches.
 func aesEncryptBlockV6InPlace(dst, input []byte) {
 	if aesAsmAvailable() {
 		aesEncryptBlockAsm(10, &v6AsmKeys().enc[0], dst, input)
@@ -627,13 +545,7 @@ func aesEncryptBlockV6Go(dst, input []byte) {
 	}
 }
 
-func aesEncryptBlockV6(input []byte) []byte {
-	output := make([]byte, 16)
-	aesEncryptBlockV6InPlace(output, input)
-	return output
-}
-
-// aesDecryptBlockV6 decrypts a single block using AES-128 with V6 round patches.
+// aesDecryptBlockV6InPlace decrypts a single block using AES-128 with V6 round patches.
 func aesDecryptBlockV6InPlace(dst, input []byte) {
 	if aesAsmAvailable() {
 		aesDecryptBlockAsm(10, &v6AsmKeys().dec[0], dst, input)
@@ -674,8 +586,3 @@ func aesDecryptBlockV6Go(dst, input []byte) {
 	}
 }
 
-func aesDecryptBlockV6(input []byte) []byte {
-	output := make([]byte, 16)
-	aesDecryptBlockV6InPlace(output, input)
-	return output
-}

@@ -4,11 +4,6 @@ package crypto
 
 import "sync"
 
-type asmRoundKeys struct {
-	enc [12][16]byte
-	dec [12][16]byte
-}
-
 var (
 	aesAsmEnabled = sync.OnceValue(func() bool {
 		return supportsAESASM() != 0

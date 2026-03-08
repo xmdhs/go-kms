@@ -108,8 +108,10 @@ func TestAESV6BlockRoundTrip(t *testing.T) {
 	}
 
 	for i, block := range blocks {
-		encrypted := aesEncryptBlockV6(block)
-		decrypted := aesDecryptBlockV6(encrypted)
+		encrypted := make([]byte, 16)
+		decrypted := make([]byte, 16)
+		aesEncryptBlockV6InPlace(encrypted, block)
+		aesDecryptBlockV6InPlace(decrypted, encrypted)
 		if !bytes.Equal(decrypted, block) {
 			t.Fatalf("block #%d mismatch: got %x want %x", i, decrypted, block)
 		}
@@ -159,10 +161,14 @@ func TestStableVectorsMatchBaseline(t *testing.T) {
 	checkHex("V6DEC", v6p, "626173656c696e652d766563746f722d646174610c0c0c0c0c0c0c0c0c0c0c0c")
 
 	block := []byte{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F}
-	v6e := aesEncryptBlockV6(block)
-	v6d := aesDecryptBlockV6(v6e)
-	v4e := aesEncryptBlockCustom(block, 20)
-	v4d := aesDecryptBlockCustom(v4e, 20)
+	v6e := make([]byte, 16)
+	v6d := make([]byte, 16)
+	v4e := make([]byte, 16)
+	v4d := make([]byte, 16)
+	aesEncryptBlockV6InPlace(v6e, block)
+	aesDecryptBlockV6InPlace(v6d, v6e)
+	aesEncryptBlockV4InPlace(v4e, block)
+	aesDecryptBlockV4InPlace(v4d, v4e)
 
 	checkHex("V6BLKENC", v6e, "ca89ca11b2c4e77a94e806af17136b38")
 	checkHex("V6BLKDEC", v6d, "000102030405060708090a0b0c0d0e0f")

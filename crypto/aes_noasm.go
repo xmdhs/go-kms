@@ -2,11 +2,6 @@
 
 package crypto
 
-type asmRoundKeys struct {
-	enc [12][16]byte
-	dec [12][16]byte
-}
-
 func aesAsmAvailable() bool {
 	return false
 }

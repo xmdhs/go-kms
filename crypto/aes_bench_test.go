@@ -114,44 +114,48 @@ func BenchmarkV6MACKey(b *testing.B) {
 // Benchmark for individual AES block encryption (V6)
 func BenchmarkAesEncryptBlockV6(b *testing.B) {
 	block := benchData(16, 0xEE)
+	dst := make([]byte, 16)
 	b.ReportAllocs()
 	b.SetBytes(16)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		aesEncryptBlockV6(block)
+		aesEncryptBlockV6InPlace(dst, block)
 	}
 }
 
 // Benchmark for individual AES block decryption (V6)
 func BenchmarkAesDecryptBlockV6(b *testing.B) {
 	block := benchData(16, 0xEF)
+	dst := make([]byte, 16)
 	b.ReportAllocs()
 	b.SetBytes(16)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		aesDecryptBlockV6(block)
+		aesDecryptBlockV6InPlace(dst, block)
 	}
 }
 
 // Benchmark for individual AES block encryption (Custom/V4)
 func BenchmarkAesEncryptBlockCustom(b *testing.B) {
 	block := benchData(16, 0xF1)
+	dst := make([]byte, 16)
 	b.ReportAllocs()
 	b.SetBytes(16)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		aesEncryptBlockCustom(block, 20)
+		aesEncryptBlockV4InPlace(dst, block)
 	}
 }
 
 // Benchmark for individual AES block decryption (Custom/V4)
 func BenchmarkAesDecryptBlockCustom(b *testing.B) {
 	block := benchData(16, 0xF2)
+	dst := make([]byte, 16)
 	b.ReportAllocs()
 	b.SetBytes(16)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		aesDecryptBlockCustom(block, 20)
+		aesDecryptBlockV4InPlace(dst, block)
 	}
 }
 
