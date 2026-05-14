@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/xmdhs/go-kms/crypto"
-	"github.com/xmdhs/go-kms/kms"
-	"github.com/xmdhs/go-kms/rpc"
+	"reference/crypto"
+	"reference/kms"
+	"reference/rpc"
 )
 
 // ClientConfig holds client configuration.

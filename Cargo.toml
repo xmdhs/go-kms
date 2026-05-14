@@ -1,0 +1,29 @@
+[package]
+name = "go-kms"
+version = "0.1.0"
+edition = "2021"
+description = "Rust port of go-kms — KMS server/client emulator"
+license = "MIT"
+
+[[bin]]
+name = "go-kms"
+path = "src/main.rs"
+
+[lib]
+name = "kms_rs"
+path = "src/lib.rs"
+
+[dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "time", "sync"] }
+sha2 = "0.10"
+hmac = "0.12"
+rand = "0.8"
+
+[dev-dependencies]
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "time", "sync"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

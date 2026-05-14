@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xmdhs/go-kms/rpc"
+	"reference/rpc"
 )
 
 // mockConn is a mock network connection for benchmarking.

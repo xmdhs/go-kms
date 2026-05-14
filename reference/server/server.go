@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/xmdhs/go-kms/kms"
-	"github.com/xmdhs/go-kms/logger"
-	"github.com/xmdhs/go-kms/rpc"
+	"reference/kms"
+	"reference/logger"
+	"reference/rpc"
 
 	r "math/rand/v2"
 )

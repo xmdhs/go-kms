@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/xmdhs/go-kms/crypto"
-	"github.com/xmdhs/go-kms/logger"
+	"reference/crypto"
+	"reference/logger"
 )
 
 // HandleV4Request processes a KMS V4 request.

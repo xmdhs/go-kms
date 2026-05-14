@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xmdhs/go-kms/crypto"
+	"reference/crypto"
 )
 
 func BenchmarkEncodeUTF16LE(b *testing.B) {

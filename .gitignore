@@ -1,1 +1,4 @@
 go-kms.exe
+/target/
+Cargo.lock
+*.rs.bk
