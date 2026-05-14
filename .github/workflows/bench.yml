@@ -1,0 +1,166 @@
+name: bench
+
+on:
+  workflow_dispatch:
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: reference/go.sum
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-bench-${{ runner.os }}-${{ hashFiles('Cargo.toml') }}
+
+      - name: CPU info
+        run: |
+          echo "=== /proc/cpuinfo (model + flags) ==="
+          grep -m1 'model name' /proc/cpuinfo || true
+          grep -m1 '^flags' /proc/cpuinfo || true
+          echo "=== nproc ==="
+          nproc
+
+      - name: Run Go benchmarks
+        working-directory: reference
+        env:
+          # match release-style optimization with the default Go toolchain
+          GOAMD64: v3
+        run: |
+          mkdir -p ../bench-results
+          # -benchtime=2s gives stable numbers without the job dragging on
+          go test -bench=. -benchmem -benchtime=2s -run=^$ ./crypto/... \
+            | tee ../bench-results/go.txt
+
+      - name: Run Rust benchmarks
+        env:
+          # enable AES-NI / SSE4 in line with the Go GOAMD64=v3 baseline
+          RUSTFLAGS: "-C target-cpu=x86-64-v3"
+        run: |
+          mkdir -p bench-results
+          cargo bench --bench crypto_bench -- --output-format bencher \
+            | tee bench-results/rust.txt
+
+      - name: Build side-by-side comparison
+        run: |
+          python3 - <<'PY'
+          import re, pathlib
+
+          def parse_go(path):
+              out = {}
+              # BenchmarkName-8   N   123 ns/op  4567 MB/s  ...
+              pat = re.compile(
+                  r'^Benchmark([A-Za-z0-9_]+)(?:-\d+)?\s+\d+\s+([\d.]+)\s+ns/op'
+                  r'(?:\s+([\d.]+)\s+MB/s)?'
+              )
+              for line in pathlib.Path(path).read_text().splitlines():
+                  m = pat.match(line)
+                  if m:
+                      name, ns, mb = m.group(1), float(m.group(2)), m.group(3)
+                      out[name] = (ns, float(mb) if mb else None)
+              return out
+
+          def parse_rust(path):
+              # bencher output: test GROUP/case ... bench: 123 ns/iter (+/- 5)
+              out = {}
+              pat = re.compile(
+                  r'^test\s+([^\s]+)\s+\.\.\.\s+bench:\s+([\d,]+)\s+ns/iter'
+              )
+              for line in pathlib.Path(path).read_text().splitlines():
+                  m = pat.match(line)
+                  if m:
+                      name = m.group(1).split('/')[0]
+                      ns = float(m.group(2).replace(',', ''))
+                      out[name] = ns
+              return out
+
+          go = parse_go('bench-results/go.txt')
+          rs = parse_rust('bench-results/rust.txt')
+
+          # Map Go benchmark name -> Rust criterion group name.
+          alias = {
+              'PKCS7Pad': 'PKCS7Pad',
+              'PKCS7Unpad': 'PKCS7Unpad',
+              'V4Hash': 'V4Hash',
+              'AESEncryptCBC_V5': 'AESEncryptCBC_V5',
+              'AESDecryptCBC_V5': 'AESDecryptCBC_V5',
+              'AESEncryptCBC_V6': 'AESEncryptCBC_V6',
+              'AESDecryptCBC_V6': 'AESDecryptCBC_V6',
+              'V6HMAC': 'V6HMAC',
+              'V6MACKey': 'V6MACKey',
+              'AesEncryptBlockV6': 'AesEncryptBlockV6',
+              'AesDecryptBlockV6': 'AesDecryptBlockV6',
+              'AesEncryptBlockCustom': 'AesEncryptBlockCustom',
+              'AesDecryptBlockCustom': 'AesDecryptBlockCustom',
+              'ExpandKey_16': 'ExpandKey_16',
+              'ExpandKey_20': 'ExpandKey_20',
+              'V4EncryptCycle': 'V4EncryptCycle',
+              'BuildRoundKeys': 'BuildRoundKeys',
+              'GaloisMult': 'GaloisMult',
+              'RandomSalt': 'RandomSalt',
+              'V6EncryptWithHMAC': 'V6EncryptWithHMAC',
+              'FullCryptoCycle_V5': 'FullCryptoCycle_V5',
+              'FullCryptoCycle_V6': 'FullCryptoCycle_V6',
+          }
+
+          rows = []
+          for go_name, rs_name in alias.items():
+              g = go.get(go_name)
+              r = rs.get(rs_name)
+              if g is None and r is None:
+                  continue
+              go_ns = g[0] if g else None
+              rs_ns = r if r is not None else None
+              ratio = (go_ns / rs_ns) if (go_ns and rs_ns) else None
+              rows.append((go_name, go_ns, rs_ns, ratio))
+
+          def fmt_ns(x):
+              return f'{x:>10.1f}' if x is not None else f'{"-":>10}'
+          def fmt_ratio(x):
+              if x is None:
+                  return f'{"-":>8}'
+              return f'{x:>7.2f}x'
+
+          lines = []
+          lines.append(f'{"Benchmark":<28} {"Go ns/op":>10} {"Rust ns/op":>12} {"Go/Rust":>10}')
+          lines.append('-' * 64)
+          for name, go_ns, rs_ns, ratio in rows:
+              lines.append(f'{name:<28} {fmt_ns(go_ns)} {fmt_ns(rs_ns):>12} {fmt_ratio(ratio):>10}')
+          report = '\n'.join(lines) + '\n'
+          pathlib.Path('bench-results/comparison.txt').write_text(report)
+          print(report)
+          PY
+
+      - name: Append comparison to job summary
+        run: |
+          {
+            echo '## Bench comparison (Go vs Rust)'
+            echo
+            echo '`Go/Rust` > 1 means Rust is faster.'
+            echo
+            echo '```'
+            cat bench-results/comparison.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload bench artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-results
+          path: bench-results/
+          if-no-files-found: error
