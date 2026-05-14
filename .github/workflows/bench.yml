@@ -1,7 +1,9 @@
 name: bench
 
 on:
-  workflow_dispatch:
+  push:
+    branches: [rust]
+  pull_request:
 
 jobs:
   bench:
