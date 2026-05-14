@@ -9,8 +9,7 @@ use crate::crypto::v4_hash::v4_hash;
 use crate::crypto::v6_mac::{v6_hmac_parts, v6_mac_key};
 
 use super::base::{
-    get_padding, server_logic, GenericRequestHeader, KmsError, KmsRequest, KmsResponse,
-    ServerConfig,
+    get_padding, server_logic, GenericRequestHeader, KmsError, KmsRequest, ServerConfig,
 };
 
 #[derive(Debug)]

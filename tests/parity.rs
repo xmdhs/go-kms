@@ -334,7 +334,8 @@ fn parity_handle_v4() {
 
 #[test]
 fn parity_server_logic() {
-    let cases = arr(&vectors(), "server_logic");
+    let vectors = vectors();
+    let cases = arr(&vectors, "server_logic");
     // First case: full request + response wire.
     let first = &cases[0];
     let req = KmsRequest::parse(&from_hex(s(first, "request"))).unwrap();
