@@ -1,9 +1,17 @@
 // KMS-specific block ciphers (V4 / V5 / V6) plus CBC and PKCS7 helpers.
-// Output bytes match the Go fallback (portable) path exactly.
+// On x86_64 with AES-NI or aarch64 with the ARMv8 AES extension, block
+// encryption/decryption is dispatched to the hardware path in `aes_hw`,
+// which mirrors the Go reference assembly byte-for-byte. Otherwise the
+// portable table-based fallback is used; both paths produce identical
+// output (verified against the Go vectors in tests/parity.rs).
 
 use std::sync::OnceLock;
 
 use super::aes::*;
+use super::aes_hw::{
+    aes_decrypt_block_hw, aes_encrypt_block_hw, hw_aes_available, v4_hw_keys, v5_hw_keys,
+    v6_hw_keys,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CryptoError {
@@ -122,22 +130,52 @@ fn decrypt_block_generic(round_keys: &[[u8; 16]], rounds: usize, input: &[u8], o
 }
 
 pub fn aes_encrypt_block_v4(input: &[u8], out: &mut [u8]) {
-    encrypt_block_generic(v4_round_keys(), 11, input, out);
+    if hw_aes_available() {
+        let k = v4_hw_keys();
+        aes_encrypt_block_hw(11, &k.enc, input, out);
+    } else {
+        encrypt_block_generic(v4_round_keys(), 11, input, out);
+    }
 }
 pub fn aes_decrypt_block_v4(input: &[u8], out: &mut [u8]) {
-    decrypt_block_generic(v4_round_keys(), 11, input, out);
+    if hw_aes_available() {
+        let k = v4_hw_keys();
+        aes_decrypt_block_hw(11, &k.dec, input, out);
+    } else {
+        decrypt_block_generic(v4_round_keys(), 11, input, out);
+    }
 }
 pub fn aes_encrypt_block_v5(input: &[u8], out: &mut [u8]) {
-    encrypt_block_generic(v5_round_keys(), 10, input, out);
+    if hw_aes_available() {
+        let k = v5_hw_keys();
+        aes_encrypt_block_hw(10, &k.enc, input, out);
+    } else {
+        encrypt_block_generic(v5_round_keys(), 10, input, out);
+    }
 }
 pub fn aes_decrypt_block_v5(input: &[u8], out: &mut [u8]) {
-    decrypt_block_generic(v5_round_keys(), 10, input, out);
+    if hw_aes_available() {
+        let k = v5_hw_keys();
+        aes_decrypt_block_hw(10, &k.dec, input, out);
+    } else {
+        decrypt_block_generic(v5_round_keys(), 10, input, out);
+    }
 }
 pub fn aes_encrypt_block_v6(input: &[u8], out: &mut [u8]) {
-    encrypt_block_generic(v6_round_keys(), 10, input, out);
+    if hw_aes_available() {
+        let k = v6_hw_keys();
+        aes_encrypt_block_hw(10, &k.enc, input, out);
+    } else {
+        encrypt_block_generic(v6_round_keys(), 10, input, out);
+    }
 }
 pub fn aes_decrypt_block_v6(input: &[u8], out: &mut [u8]) {
-    decrypt_block_generic(v6_round_keys(), 10, input, out);
+    if hw_aes_available() {
+        let k = v6_hw_keys();
+        aes_decrypt_block_hw(10, &k.dec, input, out);
+    } else {
+        decrypt_block_generic(v6_round_keys(), 10, input, out);
+    }
 }
 
 // ---------- AES-CBC (KMS V5 or V6) ----------
