@@ -1,0 +1,81 @@
+name: Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+    branches: [master]
+
+jobs:
+  build:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.10.2
+
+      - name: Build Go Android binaries
+        run: |
+          set -euxo pipefail
+          rm -rf android/app/src/main/jniLibs
+          mkdir -p android/app/src/main/jniLibs/arm64-v8a
+          mkdir -p android/app/src/main/jniLibs/armeabi-v7a
+          mkdir -p android/app/src/main/jniLibs/x86_64
+
+          NDK="$ANDROID_HOME/ndk/27.2.12479018"
+          TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+
+          CGO_ENABLED=1 GOOS=android GOARCH=arm64 CC="$TOOLCHAIN/aarch64-linux-android23-clang" \
+            go build -tags=purego -trimpath -buildmode=pie -ldflags="-s -w" \
+            -o android/app/src/main/jniLibs/arm64-v8a/libgo_kms.so .
+
+          CGO_ENABLED=1 GOOS=android GOARCH=arm GOARM=7 CC="$TOOLCHAIN/armv7a-linux-androideabi23-clang" \
+            go build -tags=purego -trimpath -buildmode=pie -ldflags="-s -w" \
+            -o android/app/src/main/jniLibs/armeabi-v7a/libgo_kms.so .
+
+          CGO_ENABLED=1 GOOS=android GOARCH=amd64 CC="$TOOLCHAIN/x86_64-linux-android23-clang" \
+            go build -tags=purego -trimpath -buildmode=pie -ldflags="-s -w" \
+            -o android/app/src/main/jniLibs/x86_64/libgo_kms.so .
+
+          file android/app/src/main/jniLibs/*/libgo_kms.so
+
+      - name: Build APK
+        working-directory: android
+        run: gradle :app:assembleDebug --no-daemon --stacktrace
+
+      - name: Verify APK contains native executables
+        run: |
+          set -euxo pipefail
+          unzip -l android/app/build/outputs/apk/debug/app-debug.apk | grep 'lib/.*/libgo_kms.so'
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-kms-android-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
