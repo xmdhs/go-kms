@@ -77,13 +77,12 @@ jobs:
           DEFAULT_VERSION="${DATE_STR}-${COMMIT_HASH}"
           RUN_NUMBER=${{ github.run_number }}
 
-          # Write version properties for Gradle
+          # Append version properties for Gradle while preserving repository gradle.properties
           {
+            echo ""
             echo "versionCode=$RUN_NUMBER"
             echo "versionName=${VERSION:-$DEFAULT_VERSION}"
-            echo "android.useAndroidX=true"
-            echo "android.nonTransitiveRClass=true"
-          } > gradle.properties
+          } >> gradle.properties
 
           if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "$VERSION" ]]; then
             gradle :app:assembleRelease --no-daemon --stacktrace
