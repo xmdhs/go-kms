@@ -76,6 +76,12 @@ jobs:
           VERSION: ${{ inputs.version }}
         working-directory: android
         run: |
+          set -euxo pipefail
+
+          DATE_STR=$(date +%Y%m%d)
+          COMMIT_HASH=$(git rev-parse --short=7 HEAD)
+          DEFAULT_VERSION="${DATE_STR}-${COMMIT_HASH}"
+
           if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "$VERSION" ]]; then
             gradle :app:assembleRelease --no-daemon --stacktrace
             echo "apk_path=android/app/build/outputs/apk/release/app-release.apk" >> $GITHUB_OUTPUT
@@ -85,6 +91,7 @@ jobs:
             gradle :app:assembleDebug --no-daemon --stacktrace
             echo "apk_path=android/app/build/outputs/apk/debug/app-debug.apk" >> $GITHUB_OUTPUT
             echo "is_release=false" >> $GITHUB_OUTPUT
+            echo "version=$DEFAULT_VERSION" >> $GITHUB_OUTPUT
           fi
 
       - name: Verify APK contains native executables
@@ -114,7 +121,7 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v7
         with:
-          name: go-kms-android-${{ steps.build.outputs.is_release == 'true' && 'release' || 'debug' }}-apk
+          name: go-kms-android-${{ steps.build.outputs.version }}-${{ steps.build.outputs.is_release == 'true' && 'release' || 'debug' }}-apk
           path: ${{ steps.build.outputs.apk_path }}
           retention-days: 3
           archive: false
