@@ -11,6 +11,7 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -122,6 +123,7 @@ class GoKmsForegroundService : Service() {
 
         return NotificationCompat.Builder(this, ChannelId)
             .setSmallIcon(R.drawable.ic_notification)
+            .setColor(ContextCompat.getColor(this, R.color.notification_icon_color))
             .setContentTitle("go-kms server 正在运行")
             .setContentText(address)
             .setContentIntent(openPendingIntent)
