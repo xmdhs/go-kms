@@ -29,7 +29,6 @@ go-kms client -ip 127.0.0.1 -port 1688
 | `-epid` | Auto-generated | ePID |
 | `-count` | 0 | Client count (0=auto) |
 | `-hwid` | 364F463A8863D35F | Hardware ID |
-| `-db` | - | Path to KmsDataBase.xml |
 
 ### Client Options
 
