@@ -1,6 +1,7 @@
 package com.xmdhs.gokms
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -16,7 +17,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -93,22 +93,44 @@ private fun GoKmsApp() {
 @Composable
 private fun ServerPanel() {
     val context = LocalContext.current
+    val settings = remember(context) { SettingsStore(context.applicationContext) }
+    val initialArgs = remember(settings) { settings.loadServer() }
     val running by GoKmsServiceState.running.collectAsStateWithLifecycle()
     val address by GoKmsServiceState.address.collectAsStateWithLifecycle()
 
-    var ip by remember { mutableStateOf("0.0.0.0") }
-    var port by remember { mutableStateOf("1688") }
-    var epid by remember { mutableStateOf("") }
-    var lcid by remember { mutableStateOf("1033") }
-    var count by remember { mutableStateOf("0") }
-    var activation by remember { mutableStateOf("120") }
-    var renewal by remember { mutableStateOf("10080") }
-    var hwid by remember { mutableStateOf("364F463A8863D35F") }
+    var ip by remember { mutableStateOf(initialArgs.ip) }
+    var port by remember { mutableStateOf(initialArgs.port) }
+    var epid by remember { mutableStateOf(initialArgs.epid) }
+    var count by remember { mutableStateOf(initialArgs.count) }
+    var hwid by remember { mutableStateOf(initialArgs.hwid) }
+    var addressRefreshKey by remember { mutableIntStateOf(0) }
+    var notificationGranted by remember { mutableStateOf(isNotificationGranted(context)) }
+
+    fun currentArgs(): ServerArgs {
+        return ServerArgs(
+            ip = ip,
+            port = port,
+            epid = epid,
+            count = count,
+            hwid = hwid,
+        )
+    }
+
+    fun saveCurrentArgs() {
+        settings.saveServer(currentArgs())
+    }
+
+    val deviceAddresses = remember(port, addressRefreshKey) {
+        DeviceAddressProvider.listenAddresses(port.trim().ifBlank { "1688" })
+    }
 
     val notificationLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
-        if (!granted) {
+        notificationGranted = granted
+        if (granted) {
+            LogBuffer.append("通知权限已授予")
+        } else {
             LogBuffer.append("通知权限被拒绝：Android 13+ 上前台服务通知可能无法显示")
         }
     }
@@ -117,20 +139,55 @@ private fun ServerPanel() {
     Text(if (running) "状态：运行中 $address" else "状态：已停止")
     Spacer(modifier = Modifier.height(8.dp))
 
-    TextFieldRow("监听 IP", ip) { ip = it }
-    NumberFieldRow("端口", port) { port = it }
-    TextFieldRow("ePID（可空）", epid) { epid = it }
-    NumberFieldRow("LCID", lcid) { lcid = it }
-    NumberFieldRow("客户端数量", count) { count = it }
-    NumberFieldRow("激活间隔（分钟）", activation) { activation = it }
-    NumberFieldRow("续订间隔（分钟）", renewal) { renewal = it }
-    TextFieldRow("HWID", hwid) { hwid = it }
+    NotificationPanel(
+        granted = notificationGranted,
+        onRequest = {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        },
+    )
+
+    Spacer(modifier = Modifier.height(8.dp))
+    ListenAddressPanel(
+        bindAddress = "${ip.trim()}:${port.trim()}",
+        deviceAddresses = deviceAddresses,
+        onRefresh = { addressRefreshKey++ },
+    )
+
+    Spacer(modifier = Modifier.height(8.dp))
+    TextFieldRow("监听 IP", ip) {
+        ip = it
+        saveCurrentArgs()
+    }
+    NumberFieldRow("端口", port) {
+        port = it
+        saveCurrentArgs()
+    }
+    TextFieldRow("ePID（可空）", epid) {
+        epid = it
+        saveCurrentArgs()
+    }
+    NumberFieldRow("客户端数量", count) {
+        count = it
+        saveCurrentArgs()
+    }
+    TextFieldRow("HWID", hwid) {
+        hwid = it
+        saveCurrentArgs()
+    }
 
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedButton(onClick = { hwid = "RANDOM" }) {
+        OutlinedButton(onClick = {
+            hwid = "RANDOM"
+            saveCurrentArgs()
+        }) {
             Text("使用 RANDOM")
         }
-        OutlinedButton(onClick = { hwid = "364F463A8863D35F" }) {
+        OutlinedButton(onClick = {
+            hwid = "364F463A8863D35F"
+            saveCurrentArgs()
+        }) {
             Text("默认 HWID")
         }
     }
@@ -140,18 +197,22 @@ private fun ServerPanel() {
         Button(
             enabled = !running,
             onClick = {
-                val args = ServerArgs(ip, port, epid, lcid, count, activation, renewal, hwid)
+                val args = currentArgs()
                 args.validate()?.let {
                     LogBuffer.append("参数错误：$it")
                     return@Button
                 }
+                settings.saveServer(args)
 
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                    ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-                ) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !notificationGranted) {
                     notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                     LogBuffer.append("请授予通知权限后再次启动服务")
                     return@Button
+                }
+
+                val displayAddresses = DeviceAddressProvider.listenAddresses(args.port)
+                if (displayAddresses.isNotEmpty()) {
+                    LogBuffer.append("设备当前可访问地址：${displayAddresses.joinToString(", ")}")
                 }
 
                 ContextCompat.startForegroundService(
@@ -179,34 +240,66 @@ private fun ServerPanel() {
 @Composable
 private fun ClientPanel() {
     val context = LocalContext.current
+    val settings = remember(context) { SettingsStore(context.applicationContext) }
+    val initialArgs = remember(settings) { settings.loadClient() }
     val scope = rememberCoroutineScope()
 
-    var ip by remember { mutableStateOf("127.0.0.1") }
-    var port by remember { mutableStateOf("1688") }
-    var mode by remember { mutableStateOf("Windows8.1") }
-    var cmid by remember { mutableStateOf("") }
-    var machine by remember { mutableStateOf("") }
+    var ip by remember { mutableStateOf(initialArgs.ip) }
+    var port by remember { mutableStateOf(initialArgs.port) }
+    var mode by remember { mutableStateOf(initialArgs.mode) }
+    var cmid by remember { mutableStateOf(initialArgs.cmid) }
+    var machine by remember { mutableStateOf(initialArgs.name) }
     var running by remember { mutableStateOf(false) }
+
+    fun currentArgs(): ClientArgs {
+        return ClientArgs(
+            ip = ip,
+            port = port,
+            mode = mode,
+            cmid = cmid,
+            name = machine,
+        )
+    }
+
+    fun saveCurrentArgs() {
+        settings.saveClient(currentArgs())
+    }
 
     Text("客户端", style = MaterialTheme.typography.titleLarge)
     Spacer(modifier = Modifier.height(8.dp))
 
-    TextFieldRow("服务器 IP", ip) { ip = it }
-    NumberFieldRow("端口", port) { port = it }
-    ModeDropdown(mode) { mode = it }
-    TextFieldRow("CMID（可空）", cmid) { cmid = it }
-    TextFieldRow("机器名（可空）", machine) { machine = it }
+    TextFieldRow("服务器 IP", ip) {
+        ip = it
+        saveCurrentArgs()
+    }
+    NumberFieldRow("端口", port) {
+        port = it
+        saveCurrentArgs()
+    }
+    ModeDropdown(mode) {
+        mode = it
+        saveCurrentArgs()
+    }
+    TextFieldRow("CMID（可空）", cmid) {
+        cmid = it
+        saveCurrentArgs()
+    }
+    TextFieldRow("机器名（可空）", machine) {
+        machine = it
+        saveCurrentArgs()
+    }
 
     Spacer(modifier = Modifier.height(12.dp))
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Button(
             enabled = !running,
             onClick = {
-                val args = ClientArgs(ip, port, mode, cmid, machine)
+                val args = currentArgs()
                 args.validate()?.let {
                     LogBuffer.append("参数错误：$it")
                     return@Button
                 }
+                settings.saveClient(args)
 
                 running = true
                 scope.launch {
@@ -230,6 +323,45 @@ private fun ClientPanel() {
 
         TextButton(onClick = LogBuffer::clear) {
             Text("清空日志")
+        }
+    }
+}
+
+@Composable
+private fun NotificationPanel(granted: Boolean, onRequest: () -> Unit) {
+    Surface(tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text("通知栏", style = MaterialTheme.typography.titleMedium)
+            Text("服务端以前台服务运行，通知栏会显示运行状态，并提供停止入口。")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                Text(if (granted) "通知权限：已允许" else "通知权限：未允许")
+                if (!granted) {
+                    OutlinedButton(onClick = onRequest) {
+                        Text("授予通知权限")
+                    }
+                }
+            } else {
+                Text("通知权限：当前 Android 版本无需运行时授权")
+            }
+        }
+    }
+}
+
+@Composable
+private fun ListenAddressPanel(bindAddress: String, deviceAddresses: List<String>, onRefresh: () -> Unit) {
+    Surface(tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text("监听地址", style = MaterialTheme.typography.titleMedium)
+            Text("绑定参数：$bindAddress")
+            if (deviceAddresses.isEmpty()) {
+                Text("当前未获取到非回环设备 IP")
+            } else {
+                Text("设备当前可访问地址：")
+                deviceAddresses.forEach { address -> Text(address) }
+            }
+            OutlinedButton(onClick = onRefresh) {
+                Text("刷新 IP")
+            }
         }
     }
 }
@@ -304,4 +436,9 @@ private fun LogPanel(logs: List<String>) {
             }
         }
     }
+}
+
+private fun isNotificationGranted(context: Context): Boolean {
+    return Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
 }
