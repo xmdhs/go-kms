@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -66,7 +67,11 @@ private fun GoKmsApp() {
     val logs by LogBuffer.lines.collectAsStateWithLifecycle()
     var selectedTab by remember { mutableIntStateOf(0) }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .systemBarsPadding(),
+    ) {
         TabRow(selectedTabIndex = selectedTab) {
             Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text("Server") })
             Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, text = { Text("Client") })
@@ -139,16 +144,6 @@ private fun ServerPanel() {
     Text(if (running) "状态：运行中 $address" else "状态：已停止")
     Spacer(modifier = Modifier.height(8.dp))
 
-    NotificationPanel(
-        granted = notificationGranted,
-        onRequest = {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            }
-        },
-    )
-
-    Spacer(modifier = Modifier.height(8.dp))
     ListenAddressPanel(
         bindAddress = "${ip.trim()}:${port.trim()}",
         deviceAddresses = deviceAddresses,
@@ -323,26 +318,6 @@ private fun ClientPanel() {
 
         TextButton(onClick = LogBuffer::clear) {
             Text("清空日志")
-        }
-    }
-}
-
-@Composable
-private fun NotificationPanel(granted: Boolean, onRequest: () -> Unit) {
-    Surface(tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Text("通知栏", style = MaterialTheme.typography.titleMedium)
-            Text("服务端以前台服务运行，通知栏会显示运行状态，并提供停止入口。")
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                Text(if (granted) "通知权限：已允许" else "通知权限：未允许")
-                if (!granted) {
-                    OutlinedButton(onClick = onRequest) {
-                        Text("授予通知权限")
-                    }
-                }
-            } else {
-                Text("通知权限：当前 Android 版本无需运行时授权")
-            }
         }
     }
 }
