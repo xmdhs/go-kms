@@ -81,6 +81,11 @@ jobs:
           DATE_STR=$(date +%Y%m%d)
           COMMIT_HASH=$(git rev-parse --short=7 HEAD)
           DEFAULT_VERSION="${DATE_STR}-${COMMIT_HASH}"
+          RUN_NUMBER=${{ github.run_number }}
+
+          # Write version properties for Gradle
+          echo "versionCode=$RUN_NUMBER" > gradle.properties
+          echo "versionName=${VERSION:-$DEFAULT_VERSION}" >> gradle.properties
 
           if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "$VERSION" ]]; then
             gradle :app:assembleRelease --no-daemon --stacktrace
