@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">go-kms</string>
+    <string name="notification_channel_name">go-kms server</string>
+</resources>

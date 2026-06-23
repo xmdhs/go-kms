@@ -1,0 +1,142 @@
+name: Android APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (e.g. v1.2.3)"
+        required: false
+        type: string
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+    branches: [master]
+
+jobs:
+  build:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.10.2
+
+      - name: Build Go Android binaries
+        run: |
+          set -euxo pipefail
+          rm -rf android/app/src/main/jniLibs
+          mkdir -p android/app/src/main/jniLibs/arm64-v8a
+          mkdir -p android/app/src/main/jniLibs/armeabi-v7a
+          mkdir -p android/app/src/main/jniLibs/x86_64
+
+          NDK="$ANDROID_HOME/ndk/27.3.13750724"
+          TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+
+          CGO_ENABLED=1 GOOS=android GOARCH=arm64 CC="$TOOLCHAIN/aarch64-linux-android23-clang" \
+            go build -trimpath -ldflags="-s -w" \
+            -o android/app/src/main/jniLibs/arm64-v8a/libgo_kms.so .
+
+          CGO_ENABLED=1 GOOS=android GOARCH=arm GOARM=7 CC="$TOOLCHAIN/armv7a-linux-androideabi23-clang" \
+            go build -trimpath -ldflags="-s -w" \
+            -o android/app/src/main/jniLibs/armeabi-v7a/libgo_kms.so .
+
+          CGO_ENABLED=1 GOOS=android GOARCH=amd64 CC="$TOOLCHAIN/x86_64-linux-android23-clang" \
+            go build -trimpath -ldflags="-s -w" \
+            -o android/app/src/main/jniLibs/x86_64/libgo_kms.so .
+
+          file android/app/src/main/jniLibs/*/libgo_kms.so
+
+      - name: Build APK
+        id: build
+        env:
+          VERSION: ${{ inputs.version }}
+        working-directory: android
+        run: |
+          set -euxo pipefail
+
+          DATE_STR=$(date +%Y%m%d)
+          COMMIT_HASH=$(git rev-parse --short=7 HEAD)
+          DEFAULT_VERSION="${DATE_STR}-${COMMIT_HASH}"
+          RUN_NUMBER=${{ github.run_number }}
+
+          # Append version properties for Gradle while preserving repository gradle.properties
+          {
+            echo ""
+            echo "versionCode=$RUN_NUMBER"
+            echo "versionName=${VERSION:-$DEFAULT_VERSION}"
+          } >> gradle.properties
+
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "$VERSION" ]]; then
+            gradle :app:assembleRelease --no-daemon --stacktrace
+            echo "apk_path=android/app/build/outputs/apk/release/app-release.apk" >> $GITHUB_OUTPUT
+            echo "is_release=true" >> $GITHUB_OUTPUT
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+          else
+            gradle :app:assembleDebug --no-daemon --stacktrace
+            echo "apk_path=android/app/build/outputs/apk/debug/app-debug.apk" >> $GITHUB_OUTPUT
+            echo "is_release=false" >> $GITHUB_OUTPUT
+            echo "version=$DEFAULT_VERSION" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Verify APK contains native executables
+        run: |
+          set -euxo pipefail
+          unzip -l ${{ steps.build.outputs.apk_path }} | grep 'lib/.*/libgo_kms.so'
+
+      - name: Sign APK
+        env:
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: |
+          set -euxo pipefail
+          BUILD_TOOLS=$(ls -d $ANDROID_HOME/build-tools/*/ | tail -1 | xargs basename)
+          echo "$SIGNING_KEY" | base64 -d > signing-key.jks
+          $ANDROID_HOME/build-tools/$BUILD_TOOLS/zipalign -f 4 ${{ steps.build.outputs.apk_path }} ${{ steps.build.outputs.apk_path }}.aligned
+          $ANDROID_HOME/build-tools/$BUILD_TOOLS/apksigner sign \
+            --ks signing-key.jks \
+            --ks-pass pass:$KEYSTORE_PASSWORD \
+            --key-pass pass:$KEY_PASSWORD \
+            --ks-key-alias "$KEY_ALIAS" \
+            --out ${{ steps.build.outputs.apk_path }} \
+            ${{ steps.build.outputs.apk_path }}.aligned
+          rm -f ${{ steps.build.outputs.apk_path }}.aligned signing-key.jks
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: go-kms-android-${{ steps.build.outputs.version }}-${{ steps.build.outputs.is_release == 'true' && 'release' || 'debug' }}-apk
+          path: ${{ steps.build.outputs.apk_path }}
+          retention-days: 3
+          archive: false
+
+      - name: Create GitHub Release
+        if: steps.build.outputs.is_release == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.build.outputs.version }}
+          name: Release ${{ steps.build.outputs.version }}
+          draft: false
+          prerelease: false
+          files: ${{ steps.build.outputs.apk_path }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
