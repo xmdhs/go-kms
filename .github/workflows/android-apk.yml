@@ -34,12 +34,6 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android SDK packages
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018"
-
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -53,7 +47,7 @@ jobs:
           mkdir -p android/app/src/main/jniLibs/armeabi-v7a
           mkdir -p android/app/src/main/jniLibs/x86_64
 
-          NDK="$ANDROID_HOME/ndk/27.2.12479018"
+          NDK="$ANDROID_HOME/ndk/27.3.13750724"
           TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
 
           CGO_ENABLED=1 GOOS=android GOARCH=arm64 CC="$TOOLCHAIN/aarch64-linux-android23-clang" \
@@ -84,8 +78,12 @@ jobs:
           RUN_NUMBER=${{ github.run_number }}
 
           # Write version properties for Gradle
-          echo "versionCode=$RUN_NUMBER" > gradle.properties
-          echo "versionName=${VERSION:-$DEFAULT_VERSION}" >> gradle.properties
+          {
+            echo "versionCode=$RUN_NUMBER"
+            echo "versionName=${VERSION:-$DEFAULT_VERSION}"
+            echo "android.useAndroidX=true"
+            echo "android.nonTransitiveRClass=true"
+          } > gradle.properties
 
           if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "$VERSION" ]]; then
             gradle :app:assembleRelease --no-daemon --stacktrace
@@ -112,9 +110,10 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         run: |
           set -euxo pipefail
+          BUILD_TOOLS=$(ls -d $ANDROID_HOME/build-tools/*/ | tail -1 | xargs basename)
           echo "$SIGNING_KEY" | base64 -d > signing-key.jks
-          $ANDROID_HOME/build-tools/35.0.0/zipalign -f 4 ${{ steps.build.outputs.apk_path }} ${{ steps.build.outputs.apk_path }}.aligned
-          $ANDROID_HOME/build-tools/35.0.0/apksigner sign \
+          $ANDROID_HOME/build-tools/$BUILD_TOOLS/zipalign -f 4 ${{ steps.build.outputs.apk_path }} ${{ steps.build.outputs.apk_path }}.aligned
+          $ANDROID_HOME/build-tools/$BUILD_TOOLS/apksigner sign \
             --ks signing-key.jks \
             --ks-pass pass:$KEYSTORE_PASSWORD \
             --key-pass pass:$KEY_PASSWORD \
