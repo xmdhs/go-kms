@@ -46,8 +46,3 @@ go build -o go-kms.exe
 ```
 
 
-1. 打开 **Android APK** workflow。
-2. 手动运行 `workflow_dispatch`，或推送到 `master` / `v*` tag。
-3. 下载 `go-kms-android-debug-apk` artifact。
-
-workflow 使用 Android NDK 构建 `arm64-v8a`、`armeabi-v7a` 和 `x86_64` 二进制，然后在 CI 中运行 Gradle APK 构建。
