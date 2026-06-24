@@ -4,20 +4,17 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release version (e.g. v1.2.3)"
+        description: "Release version (e.g. 1.2.3)"
         required: false
         type: string
-  push:
-    branches: ["**"]
-    tags: ["v*"]
-  pull_request:
-    branches: [master]
 
 jobs:
   build:
     name: Build Android APK
     runs-on: ubuntu-latest
-
+    permissions:
+      contents: write
+      
     steps:
       - name: Checkout
         uses: actions/checkout@v4
