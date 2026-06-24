@@ -85,16 +85,20 @@ jobs:
             gradle :app:assembleRelease --no-daemon --stacktrace
             APK_PATH=$(find app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' -print -quit)
             test -n "$APK_PATH"
-            echo "apk_path=android/$APK_PATH" >> $GITHUB_OUTPUT
-            echo "is_release=true" >> $GITHUB_OUTPUT
-            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            FINAL_APK_PATH="app/build/outputs/apk/release/go-kms-android-$VERSION-release.apk"
+            mv "$APK_PATH" "$FINAL_APK_PATH"
+            echo "apk_path=android/$FINAL_APK_PATH" >> "$GITHUB_OUTPUT"
+            echo "is_release=true" >> "$GITHUB_OUTPUT"
+            echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           else
             gradle :app:assembleDebug --no-daemon --stacktrace
             APK_PATH=$(find app/build/outputs/apk/debug -maxdepth 1 -type f -name '*.apk' -print -quit)
             test -n "$APK_PATH"
-            echo "apk_path=android/$APK_PATH" >> $GITHUB_OUTPUT
-            echo "is_release=false" >> $GITHUB_OUTPUT
-            echo "version=$DEFAULT_VERSION" >> $GITHUB_OUTPUT
+            FINAL_APK_PATH="app/build/outputs/apk/debug/go-kms-android-$DEFAULT_VERSION-debug.apk"
+            mv "$APK_PATH" "$FINAL_APK_PATH"
+            echo "apk_path=android/$FINAL_APK_PATH" >> "$GITHUB_OUTPUT"
+            echo "is_release=false" >> "$GITHUB_OUTPUT"
+            echo "version=$DEFAULT_VERSION" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Verify APK contains native executables
