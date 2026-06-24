@@ -86,12 +86,16 @@ jobs:
 
           if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "$VERSION" ]]; then
             gradle :app:assembleRelease --no-daemon --stacktrace
-            echo "apk_path=android/app/build/outputs/apk/release/app-release.apk" >> $GITHUB_OUTPUT
+            APK_PATH=$(find app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' -print -quit)
+            test -n "$APK_PATH"
+            echo "apk_path=android/$APK_PATH" >> $GITHUB_OUTPUT
             echo "is_release=true" >> $GITHUB_OUTPUT
             echo "version=$VERSION" >> $GITHUB_OUTPUT
           else
             gradle :app:assembleDebug --no-daemon --stacktrace
-            echo "apk_path=android/app/build/outputs/apk/debug/app-debug.apk" >> $GITHUB_OUTPUT
+            APK_PATH=$(find app/build/outputs/apk/debug -maxdepth 1 -type f -name '*.apk' -print -quit)
+            test -n "$APK_PATH"
+            echo "apk_path=android/$APK_PATH" >> $GITHUB_OUTPUT
             echo "is_release=false" >> $GITHUB_OUTPUT
             echo "version=$DEFAULT_VERSION" >> $GITHUB_OUTPUT
           fi
