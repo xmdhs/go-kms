@@ -74,6 +74,8 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
@@ -643,6 +645,23 @@ private fun LogPanel(
         shape = RoundedCornerShape(12.dp),
         modifier = Modifier.fillMaxWidth(),
     ) {
+        val noScrollChain = remember {
+            object : NestedScrollConnection {
+                override fun onPostScroll(
+                    consumed: androidx.compose.ui.geometry.Offset,
+                    available: androidx.compose.ui.geometry.Offset,
+                    source: NestedScrollSource,
+                ): androidx.compose.ui.geometry.Offset {
+                    return if (source == NestedScrollSource.UserInput) {
+                        // Consume remaining vertical scroll to stop scroll chaining
+                        androidx.compose.ui.geometry.Offset(0f, available.y.coerceAtLeast(0f))
+                    } else {
+                        androidx.compose.ui.geometry.Offset.Zero
+                    }
+                }
+            }
+        }
+
         if (logs.isEmpty()) {
             Box(
                 modifier = Modifier
@@ -684,6 +703,7 @@ private fun LogPanel(
                         .fillMaxWidth()
                         .heightIn(max = 350.dp)
                         .verticalScroll(logScrollState)
+                        .nestedScroll(noScrollChain)
                         .padding(12.dp),
                 ) {
                     displayLogs.forEach { line ->
