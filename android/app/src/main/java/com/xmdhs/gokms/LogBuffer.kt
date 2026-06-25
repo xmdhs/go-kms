@@ -8,17 +8,35 @@ import kotlinx.coroutines.flow.update
 object LogBuffer {
     private const val MaxLines = 1_000
 
-    private val _lines = MutableStateFlow<List<String>>(emptyList())
-    val lines: StateFlow<List<String>> = _lines.asStateFlow()
+    private val _serverLines = MutableStateFlow<List<String>>(emptyList())
+    val serverLines: StateFlow<List<String>> = _serverLines.asStateFlow()
 
-    fun append(line: String) {
-        _lines.update { current ->
+    private val _clientLines = MutableStateFlow<List<String>>(emptyList())
+    val clientLines: StateFlow<List<String>> = _clientLines.asStateFlow()
+
+    fun appendServer(line: String) {
+        _serverLines.update { current ->
             (current + line).takeLast(MaxLines)
         }
     }
 
-    fun clear() {
-        _lines.value = emptyList()
+    fun appendClient(line: String) {
+        _clientLines.update { current ->
+            (current + line).takeLast(MaxLines)
+        }
+    }
+
+    fun clearServer() {
+        _serverLines.value = emptyList()
+    }
+
+    fun clearClient() {
+        _clientLines.value = emptyList()
+    }
+
+    fun clearAll() {
+        _serverLines.value = emptyList()
+        _clientLines.value = emptyList()
     }
 }
 

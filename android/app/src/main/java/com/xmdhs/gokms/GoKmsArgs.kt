@@ -18,19 +18,13 @@ data class ServerArgs(
     val ip: String = "0.0.0.0",
     val port: String = "1688",
     val epid: String = "",
-    val lcid: String = "1033",
     val count: String = "0",
-    val activation: String = "120",
-    val renewal: String = "10080",
     val hwid: String = "364F463A8863D35F",
 ) {
     fun validate(): String? {
         if (ip.isBlank()) return "监听 IP 不能为空"
         validatePort(port)?.let { return it }
-        validateNonNegativeInt(lcid, "LCID")?.let { return it }
         validateNonNegativeInt(count, "客户端数量")?.let { return it }
-        validateNonNegativeInt(activation, "激活间隔")?.let { return it }
-        validateNonNegativeInt(renewal, "续订间隔")?.let { return it }
         if (!hwidRegex.matches(hwid.trim())) return "HWID 必须是 RANDOM 或 16 位十六进制字符串"
         return null
     }
@@ -45,14 +39,8 @@ data class ServerArgs(
             add("-epid")
             add(epid.trim())
         }
-        add("-lcid")
-        add(lcid.trim())
         add("-count")
         add(count.trim())
-        add("-activation")
-        add(activation.trim())
-        add("-renewal")
-        add(renewal.trim())
         add("-hwid")
         add(hwid.trim())
     }
