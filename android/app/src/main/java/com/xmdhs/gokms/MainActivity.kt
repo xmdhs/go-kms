@@ -159,43 +159,6 @@ private fun GoKmsApp() {
     val onLogInteractionChange: (Boolean) -> Unit = remember {
         { active -> blockPageVerticalScroll = active }
     }
-    val pageVerticalScrollBlocker = remember(blockPageVerticalScroll) {
-        object : NestedScrollConnection {
-            override fun onPreScroll(
-                available: Offset,
-                source: NestedScrollSource,
-            ): Offset {
-                return if (blockPageVerticalScroll && source == NestedScrollSource.UserInput) {
-                    Offset(0f, available.y)
-                } else {
-                    Offset.Zero
-                }
-            }
-
-            override fun onPostScroll(
-                consumed: Offset,
-                available: Offset,
-                source: NestedScrollSource,
-            ): Offset {
-                return if (blockPageVerticalScroll && source == NestedScrollSource.UserInput) {
-                    Offset(0f, available.y)
-                } else {
-                    Offset.Zero
-                }
-            }
-
-            override suspend fun onPreFling(available: Velocity): Velocity {
-                return if (blockPageVerticalScroll) Velocity(0f, available.y) else Velocity.Zero
-            }
-
-            override suspend fun onPostFling(
-                consumed: Velocity,
-                available: Velocity,
-            ): Velocity {
-                return if (blockPageVerticalScroll) available.copy(x = 0f) else Velocity.Zero
-            }
-        }
-    }
 
     Column(
         modifier = Modifier
@@ -230,7 +193,6 @@ private fun GoKmsApp() {
                         state = rememberScrollState(),
                         enabled = !blockPageVerticalScroll,
                     )
-                    .nestedScroll(pageVerticalScrollBlocker)
                     .padding(16.dp),
             ) {
                 when (page) {
