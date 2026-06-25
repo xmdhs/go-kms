@@ -98,8 +98,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.time.LocalTime
-import java.time.format.DateTimeFormatter
+import java.lang.Process
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -410,6 +409,18 @@ private fun ClientPanel(
     var cmid by remember { mutableStateOf(initialArgs.cmid) }
     var machine by remember { mutableStateOf(initialArgs.name) }
     var running by remember { mutableStateOf(false) }
+    val clientProcess = remember { mutableStateOf<Process?>(null) }
+
+    // 当 ClientPanel 离开组合时，自动清理客户端进程，防止僵尸进程
+    DisposableEffect(Unit) {
+        onDispose {
+            clientProcess.value?.let { proc ->
+                if (GoKmsProcessRunner.isAlive(proc)) {
+                    GoKmsProcessRunner.stop(proc, LogBuffer::appendClient)
+                }
+            }
+        }
+    }
 
     fun currentArgs(): ClientArgs {
         return ClientArgs(
@@ -486,16 +497,22 @@ private fun ClientPanel(
 
                 running = true
                 scope.launch {
-                    val exit = withContext(Dispatchers.IO) {
+                    val process = withContext(Dispatchers.IO) {
                         try {
-                            val process = GoKmsProcessRunner.start(context, args.toCommandLine(), LogBuffer::appendClient)
-                            GoKmsProcessRunner.readOutput(process, LogBuffer::appendClient)
-                            process.waitFor()
+                            GoKmsProcessRunner.start(context, args.toCommandLine(), LogBuffer::appendClient)
                         } catch (t: Throwable) {
                             LogBuffer.appendClient("运行 go-kms client 失败：${t.message}")
-                            -1
+                            null
                         }
                     }
+                    if (process == null) {
+                        running = false
+                        return@launch
+                    }
+                    clientProcess.value = process
+                    GoKmsProcessRunner.readOutput(process, LogBuffer::appendClient)
+                    val exit = process.waitFor()
+                    clientProcess.value = null
                     LogBuffer.appendClient("go-kms client 已退出，exit code=$exit")
                     running = false
                 }
@@ -819,7 +836,6 @@ private fun LogPanel(
                             key = { index, line -> "${displayStartIndex + index}-$line" },
                         ) { _, line ->
                             val logColor = logLineColor(line, isDark)
-                            val timeStr = timestamp()
                             Surface(
                                 color = logColor.copy(alpha = 0.08f),
                                 shape = RoundedCornerShape(6.dp),
@@ -828,7 +844,7 @@ private fun LogPanel(
                                     .padding(vertical = 2.dp),
                             ) {
                                 Text(
-                                    text = "$timeStr $line",
+                                    text = line,
                                     style = MaterialTheme.typography.bodySmall,
                                     color = logColor,
                                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
@@ -839,16 +855,6 @@ private fun LogPanel(
                 }
             }
         }
-    }
-}
-
-private val timeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss")
-
-private fun timestamp(): String {
-    return try {
-        LocalTime.now().format(timeFormatter)
-    } catch (_: Exception) {
-        ""
     }
 }
 

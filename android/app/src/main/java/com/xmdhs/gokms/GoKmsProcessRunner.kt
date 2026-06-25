@@ -68,5 +68,19 @@ object GoKmsProcessRunner {
             process.destroy()
             onLine("已请求终止 go-kms 进程")
         }
+        closeStreams(process)
+    }
+
+    /** 确保进程的 I/O 流被显式关闭，防止文件描述符泄漏 */
+    private fun closeStreams(process: Process) {
+        try {
+            process.inputStream.close()
+        } catch (_: Exception) { }
+        try {
+            process.outputStream.close()
+        } catch (_: Exception) { }
+        try {
+            process.errorStream.close()
+        } catch (_: Exception) { }
     }
 }

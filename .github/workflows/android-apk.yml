@@ -44,7 +44,13 @@ jobs:
           mkdir -p android/app/src/main/jniLibs/armeabi-v7a
           mkdir -p android/app/src/main/jniLibs/x86_64
 
-          NDK="$ANDROID_HOME/ndk/27.3.13750724"
+          NDK=$(ls -1d $ANDROID_HOME/ndk/*/ 2>/dev/null | sort -V | tail -1 | sed 's:/$::')
+          if [ -z "$NDK" ] && [ -n "$ANDROID_NDK_HOME" ]; then
+            NDK="$ANDROID_NDK_HOME"
+          fi
+          if [ -z "$NDK" ]; then
+            echo "NDK not found"; exit 1
+          fi
           TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
 
           CGO_ENABLED=1 GOOS=android GOARCH=arm64 CC="$TOOLCHAIN/aarch64-linux-android23-clang" \
