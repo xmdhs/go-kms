@@ -10,6 +10,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -63,6 +65,7 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
@@ -80,6 +83,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.input.KeyboardType
@@ -89,6 +93,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalTime
@@ -148,6 +153,47 @@ private fun GoKmsApp() {
     val clientLogs by LogBuffer.clientLines.collectAsStateWithLifecycle()
     val pagerState = rememberPagerState(pageCount = { 2 })
     val scope = rememberCoroutineScope()
+    var blockPageVerticalScroll by remember { mutableStateOf(false) }
+    val onLogInteractionChange: (Boolean) -> Unit = remember {
+        { active -> blockPageVerticalScroll = active }
+    }
+    val pageVerticalScrollBlocker = remember(blockPageVerticalScroll) {
+        object : NestedScrollConnection {
+            override fun onPreScroll(
+                available: Offset,
+                source: NestedScrollSource,
+            ): Offset {
+                return if (blockPageVerticalScroll && source == NestedScrollSource.UserInput) {
+                    Offset(0f, available.y)
+                } else {
+                    Offset.Zero
+                }
+            }
+
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource,
+            ): Offset {
+                return if (blockPageVerticalScroll && source == NestedScrollSource.UserInput) {
+                    Offset(0f, available.y)
+                } else {
+                    Offset.Zero
+                }
+            }
+
+            override suspend fun onPreFling(available: Velocity): Velocity {
+                return if (blockPageVerticalScroll) Velocity(0f, available.y) else Velocity.Zero
+            }
+
+            override suspend fun onPostFling(
+                consumed: Velocity,
+                available: Velocity,
+            ): Velocity {
+                return if (blockPageVerticalScroll) available.copy(x = 0f) else Velocity.Zero
+            }
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -178,12 +224,22 @@ private fun GoKmsApp() {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
+                    .verticalScroll(
+                        state = rememberScrollState(),
+                        enabled = !blockPageVerticalScroll,
+                    )
+                    .nestedScroll(pageVerticalScrollBlocker)
                     .padding(16.dp),
             ) {
                 when (page) {
-                    0 -> ServerPanel(serverLogs)
-                    1 -> ClientPanel(clientLogs)
+                    0 -> ServerPanel(
+                        logs = serverLogs,
+                        onLogInteractionChange = onLogInteractionChange,
+                    )
+                    1 -> ClientPanel(
+                        logs = clientLogs,
+                        onLogInteractionChange = onLogInteractionChange,
+                    )
                 }
             }
         }
@@ -191,7 +247,10 @@ private fun GoKmsApp() {
 }
 
 @Composable
-private fun ServerPanel(logs: List<String>) {
+private fun ServerPanel(
+    logs: List<String>,
+    onLogInteractionChange: (Boolean) -> Unit,
+) {
     val context = LocalContext.current
     val settings = remember(context) { SettingsStore(context.applicationContext) }
     val initialArgs = remember(settings) { settings.loadServer() }
@@ -367,11 +426,15 @@ private fun ServerPanel(logs: List<String>) {
     LogPanel(
         logs = logs,
         onClear = { LogBuffer.clearServer() },
+        onInteractionChange = onLogInteractionChange,
     )
 }
 
 @Composable
-private fun ClientPanel(logs: List<String>) {
+private fun ClientPanel(
+    logs: List<String>,
+    onLogInteractionChange: (Boolean) -> Unit,
+) {
     val context = LocalContext.current
     val settings = remember(context) { SettingsStore(context.applicationContext) }
     val initialArgs = remember(settings) { settings.loadClient() }
@@ -488,6 +551,7 @@ private fun ClientPanel(logs: List<String>) {
     LogPanel(
         logs = logs,
         onClear = { LogBuffer.clearClient() },
+        onInteractionChange = onLogInteractionChange,
     )
 }
 
@@ -619,8 +683,13 @@ private fun ModeDropdown(value: String, onValueChange: (String) -> Unit) {
 private fun LogPanel(
     logs: List<String>,
     onClear: () -> Unit,
+    onInteractionChange: (Boolean) -> Unit,
 ) {
     val isDark = isSystemInDarkTheme()
+
+    DisposableEffect(Unit) {
+        onDispose { onInteractionChange(false) }
+    }
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -751,6 +820,22 @@ private fun LogPanel(
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(max = 350.dp)
+                        .pointerInput(onInteractionChange) {
+                            awaitEachGesture {
+                                try {
+                                    awaitPointerEventScope {
+                                        awaitFirstDown(requireUnconsumed = false)
+                                        onInteractionChange(true)
+                                        do {
+                                            val event = awaitPointerEvent()
+                                        } while (event.changes.any { it.pressed })
+                                    }
+                                    delay(300)
+                                } finally {
+                                    onInteractionChange(false)
+                                }
+                            }
+                        }
                         .nestedScroll(blockParentVerticalScroll),
                 ) {
                     LazyColumn(
