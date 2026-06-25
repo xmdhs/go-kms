@@ -38,11 +38,13 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Article
+import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.DeleteSweep
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.NetworkCheck
+import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Router
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenuItem
@@ -297,7 +299,7 @@ private fun ServerPanel(
     // Header
     Row(verticalAlignment = Alignment.CenterVertically) {
         Icon(
-            Icons.Filled.NetworkCheck,
+            Icons.Filled.Dns,
             contentDescription = null,
             tint = if (running) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(28.dp),
@@ -464,7 +466,7 @@ private fun ClientPanel(
     // Header
     Row(verticalAlignment = Alignment.CenterVertically) {
         Icon(
-            Icons.Filled.NetworkCheck,
+            Icons.Filled.Computer,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(28.dp),
@@ -561,7 +563,7 @@ private fun ListenAddressPanel(bindAddress: String, deviceAddresses: List<String
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    Icons.Filled.Info,
+                    Icons.Filled.Router,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(20.dp),
@@ -732,7 +734,7 @@ private fun LogPanel(
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(
-                        Icons.Filled.Info,
+                        Icons.Filled.Article,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                         modifier = Modifier.size(36.dp),
