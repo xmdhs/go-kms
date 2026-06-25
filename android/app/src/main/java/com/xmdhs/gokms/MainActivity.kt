@@ -752,6 +752,7 @@ private fun LogPanel(
             val displayLogs = remember(logs) { logs.takeLast(200) }
             val displayStartIndex = logs.size - displayLogs.size
             var autoScrollToBottom by remember { mutableStateOf(true) }
+            var isTouchingLog by remember { mutableStateOf(false) }
             val isNearBottom by remember {
                 derivedStateOf {
                     val layoutInfo = listState.layoutInfo
@@ -803,6 +804,15 @@ private fun LogPanel(
                 }
             }
 
+            LaunchedEffect(isTouchingLog) {
+                if (isTouchingLog) {
+                    onInteractionChange(true)
+                } else {
+                    delay(300)
+                    onInteractionChange(false)
+                }
+            }
+
             LaunchedEffect(isNearBottom, listState.isScrollInProgress) {
                 if (isNearBottom) {
                     autoScrollToBottom = true
@@ -822,19 +832,18 @@ private fun LogPanel(
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(max = 350.dp)
-                        .pointerInput(onInteractionChange) {
+                        .pointerInput(Unit) {
                             awaitEachGesture {
                                 try {
                                     awaitPointerEventScope {
                                         awaitFirstDown(requireUnconsumed = false)
-                                        onInteractionChange(true)
+                                        isTouchingLog = true
                                         do {
                                             val event = awaitPointerEvent()
                                         } while (event.changes.any { it.pressed })
                                     }
-                                    delay(300)
                                 } finally {
-                                    onInteractionChange(false)
+                                    isTouchingLog = false
                                 }
                             }
                         }
