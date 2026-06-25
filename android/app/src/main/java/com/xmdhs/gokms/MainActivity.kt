@@ -835,13 +835,11 @@ private fun LogPanel(
                         .pointerInput(Unit) {
                             awaitEachGesture {
                                 try {
-                                    awaitPointerEventScope {
-                                        awaitFirstDown(requireUnconsumed = false)
-                                        isTouchingLog = true
-                                        do {
-                                            val event = awaitPointerEvent()
-                                        } while (event.changes.any { it.pressed })
-                                    }
+                                    awaitFirstDown(requireUnconsumed = false)
+                                    isTouchingLog = true
+                                    do {
+                                        val event = awaitPointerEvent()
+                                    } while (event.changes.any { it.pressed })
                                 } finally {
                                     isTouchingLog = false
                                 }
