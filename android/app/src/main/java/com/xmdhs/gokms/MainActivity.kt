@@ -653,11 +653,17 @@ private fun LogPanel(
                     source: NestedScrollSource,
                 ): androidx.compose.ui.geometry.Offset {
                     return if (source == NestedScrollSource.UserInput) {
-                        // Consume remaining vertical scroll to stop scroll chaining
-                        androidx.compose.ui.geometry.Offset(0f, available.y.coerceAtLeast(0f))
+                        androidx.compose.ui.geometry.Offset(0f, available.y)
                     } else {
                         androidx.compose.ui.geometry.Offset.Zero
                     }
+                }
+
+                override suspend fun onPostFling(
+                    consumed: androidx.compose.ui.unit.Velocity,
+                    available: androidx.compose.ui.unit.Velocity,
+                ): androidx.compose.ui.unit.Velocity {
+                    return available.copy(x = 0f)
                 }
             }
         }
