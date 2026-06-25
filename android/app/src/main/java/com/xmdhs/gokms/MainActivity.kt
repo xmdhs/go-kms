@@ -98,8 +98,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.lang.Process
-
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -510,8 +508,15 @@ private fun ClientPanel(
                         return@launch
                     }
                     clientProcess.value = process
-                    GoKmsProcessRunner.readOutput(process, LogBuffer::appendClient)
-                    val exit = process.waitFor()
+                    val exit = withContext(Dispatchers.IO) {
+                        try {
+                            GoKmsProcessRunner.readOutput(process, LogBuffer::appendClient)
+                            process.waitFor()
+                        } catch (t: Throwable) {
+                            LogBuffer.appendClient("读取客户端输出失败：${t.message}")
+                            -1
+                        }
+                    }
                     clientProcess.value = null
                     LogBuffer.appendClient("go-kms client 已退出，exit code=$exit")
                     running = false
