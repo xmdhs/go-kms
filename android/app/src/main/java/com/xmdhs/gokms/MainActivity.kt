@@ -14,6 +14,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -24,6 +25,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
@@ -61,6 +65,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -69,14 +74,16 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
@@ -646,29 +653,6 @@ private fun LogPanel(
         shape = RoundedCornerShape(12.dp),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        val noScrollChain = remember {
-            object : NestedScrollConnection {
-                override fun onPostScroll(
-                    consumed: androidx.compose.ui.geometry.Offset,
-                    available: androidx.compose.ui.geometry.Offset,
-                    source: NestedScrollSource,
-                ): androidx.compose.ui.geometry.Offset {
-                    return if (source == NestedScrollSource.UserInput) {
-                        androidx.compose.ui.geometry.Offset(0f, available.y)
-                    } else {
-                        androidx.compose.ui.geometry.Offset.Zero
-                    }
-                }
-
-                override suspend fun onPostFling(
-                    consumed: androidx.compose.ui.unit.Velocity,
-                    available: androidx.compose.ui.unit.Velocity,
-                ): androidx.compose.ui.unit.Velocity {
-                    return available.copy(x = 0f)
-                }
-            }
-        }
-
         if (logs.isEmpty()) {
             Box(
                 modifier = Modifier
@@ -693,42 +677,107 @@ private fun LogPanel(
                 }
             }
         } else {
-            val logScrollState = rememberScrollState()
-            val displayLogs = logs.takeLast(200)
+            val listState = rememberLazyListState()
+            val displayLogs = remember(logs) { logs.takeLast(200) }
+            val displayStartIndex = logs.size - displayLogs.size
+            var autoScrollToBottom by remember { mutableStateOf(true) }
+            val isNearBottom by remember {
+                derivedStateOf {
+                    val layoutInfo = listState.layoutInfo
+                    val total = layoutInfo.totalItemsCount
+                    if (total == 0) {
+                        true
+                    } else {
+                        val lastVisible = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+                        lastVisible >= total - 2
+                    }
+                }
+            }
+            val blockParentVerticalScroll = remember(listState) {
+                object : NestedScrollConnection {
+                    private fun canScrollLog(deltaY: Float): Boolean {
+                        return when {
+                            deltaY < 0f -> listState.canScrollForward
+                            deltaY > 0f -> listState.canScrollBackward
+                            else -> false
+                        }
+                    }
 
-            // Auto-scroll to bottom when new logs arrive
-            LaunchedEffect(displayLogs.size) {
-                if (displayLogs.isNotEmpty()) {
-                    kotlinx.coroutines.delay(50)
-                    logScrollState.animateScrollTo(logScrollState.maxValue)
+                    override fun onPreScroll(
+                        available: Offset,
+                        source: NestedScrollSource,
+                    ): Offset {
+                        if (source != NestedScrollSource.UserInput) return Offset.Zero
+                        return if (!canScrollLog(available.y)) Offset(0f, available.y) else Offset.Zero
+                    }
+
+                    override fun onPostScroll(
+                        consumed: Offset,
+                        available: Offset,
+                        source: NestedScrollSource,
+                    ): Offset {
+                        return if (source == NestedScrollSource.UserInput) Offset(0f, available.y) else Offset.Zero
+                    }
+
+                    override suspend fun onPreFling(available: Velocity): Velocity {
+                        return if (!canScrollLog(available.y)) Velocity(0f, available.y) else Velocity.Zero
+                    }
+
+                    override suspend fun onPostFling(
+                        consumed: Velocity,
+                        available: Velocity,
+                    ): Velocity {
+                        return available.copy(x = 0f)
+                    }
+                }
+            }
+
+            LaunchedEffect(isNearBottom, listState.isScrollInProgress) {
+                if (isNearBottom) {
+                    autoScrollToBottom = true
+                } else if (listState.isScrollInProgress) {
+                    autoScrollToBottom = false
+                }
+            }
+
+            LaunchedEffect(logs.size) {
+                if (displayLogs.isNotEmpty() && autoScrollToBottom) {
+                    listState.animateScrollToItem(displayLogs.lastIndex)
                 }
             }
 
             SelectionContainer {
-                Column(
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(max = 350.dp)
-                        .verticalScroll(logScrollState)
-                        .nestedScroll(noScrollChain)
-                        .padding(12.dp),
+                        .nestedScroll(blockParentVerticalScroll),
                 ) {
-                    displayLogs.forEach { line ->
-                        val logColor = logLineColor(line, isDark)
-                        val timeStr = timestamp()
-                        Surface(
-                            color = logColor.copy(alpha = 0.08f),
-                            shape = RoundedCornerShape(6.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 2.dp),
-                        ) {
-                            Text(
-                                text = "$timeStr $line",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = logColor,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                            )
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxWidth(),
+                        contentPadding = PaddingValues(12.dp),
+                    ) {
+                        itemsIndexed(
+                            items = displayLogs,
+                            key = { index, line -> "${displayStartIndex + index}-$line" },
+                        ) { _, line ->
+                            val logColor = logLineColor(line, isDark)
+                            val timeStr = timestamp()
+                            Surface(
+                                color = logColor.copy(alpha = 0.08f),
+                                shape = RoundedCornerShape(6.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 2.dp),
+                            ) {
+                                Text(
+                                    text = "$timeStr $line",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = logColor,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                )
+                            }
                         }
                     }
                 }
