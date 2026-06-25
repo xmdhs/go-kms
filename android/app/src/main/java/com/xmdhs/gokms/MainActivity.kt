@@ -10,7 +10,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,9 +24,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DeleteSweep
@@ -134,28 +136,45 @@ private fun GoKmsTheme(
 private fun GoKmsApp() {
     val serverLogs by LogBuffer.serverLines.collectAsStateWithLifecycle()
     val clientLogs by LogBuffer.clientLines.collectAsStateWithLifecycle()
-    var selectedTab by remember { mutableIntStateOf(0) }
+    val pagerState = rememberPagerState(pageCount = { 2 })
+    val scope = rememberCoroutineScope()
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .systemBarsPadding(),
     ) {
-        TabRow(selectedTabIndex = selectedTab) {
-            Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text("服务端") })
-            Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, text = { Text("客户端") })
+        TabRow(selectedTabIndex = pagerState.currentPage) {
+            Tab(
+                selected = pagerState.currentPage == 0,
+                onClick = {
+                    scope.launch { pagerState.animateScrollToPage(0) }
+                },
+                text = { Text("服务端") },
+            )
+            Tab(
+                selected = pagerState.currentPage == 1,
+                onClick = {
+                    scope.launch { pagerState.animateScrollToPage(1) }
+                },
+                text = { Text("客户端") },
+            )
         }
 
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-        ) {
-            if (selectedTab == 0) {
-                ServerPanel(serverLogs)
-            } else {
-                ClientPanel(clientLogs)
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.weight(1f),
+        ) { page ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp),
+            ) {
+                when (page) {
+                    0 -> ServerPanel(serverLogs)
+                    1 -> ClientPanel(clientLogs)
+                }
             }
         }
     }
@@ -477,11 +496,13 @@ private fun ListenAddressPanel(bindAddress: String, deviceAddresses: List<String
                 Text("监听地址", style = MaterialTheme.typography.titleMedium)
             }
             Spacer(Modifier.height(8.dp))
-            Text(
-                "绑定参数：$bindAddress",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            SelectionContainer {
+                Text(
+                    "绑定参数：$bindAddress",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             Spacer(Modifier.height(4.dp))
             if (deviceAddresses.isEmpty()) {
                 Text(
@@ -495,12 +516,16 @@ private fun ListenAddressPanel(bindAddress: String, deviceAddresses: List<String
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                deviceAddresses.forEach { address ->
-                    Text(
-                        address,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
+                SelectionContainer {
+                    Column {
+                        deviceAddresses.forEach { address ->
+                            Text(
+                                address,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    }
                 }
             }
             Spacer(Modifier.height(8.dp))
@@ -648,35 +673,36 @@ private fun LogPanel(
             // Auto-scroll to bottom when new logs arrive
             LaunchedEffect(displayLogs.size) {
                 if (displayLogs.isNotEmpty()) {
-                    // Small delay to let the layout settle
                     kotlinx.coroutines.delay(50)
                     logScrollState.animateScrollTo(logScrollState.maxValue)
                 }
             }
 
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 350.dp)
-                    .verticalScroll(logScrollState)
-                    .padding(12.dp),
-            ) {
-                displayLogs.forEach { line ->
-                    val logColor = logLineColor(line, isDark)
-                    val timeStr = timestamp()
-                    Surface(
-                        color = logColor.copy(alpha = 0.08f),
-                        shape = RoundedCornerShape(6.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 2.dp),
-                    ) {
-                        Text(
-                            text = "$timeStr $line",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = logColor,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        )
+            SelectionContainer {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 350.dp)
+                        .verticalScroll(logScrollState)
+                        .padding(12.dp),
+                ) {
+                    displayLogs.forEach { line ->
+                        val logColor = logLineColor(line, isDark)
+                        val timeStr = timestamp()
+                        Surface(
+                            color = logColor.copy(alpha = 0.08f),
+                            shape = RoundedCornerShape(6.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 2.dp),
+                        ) {
+                            Text(
+                                text = "$timeStr $line",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = logColor,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            )
+                        }
                     }
                 }
             }
