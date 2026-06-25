@@ -694,6 +694,7 @@ private fun timestamp(): String {
     }
 }
 
+@Composable
 private fun logLineColor(line: String, isDark: Boolean): Color {
     val lower = line.lowercase()
     return when {
