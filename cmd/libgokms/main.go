@@ -166,7 +166,7 @@ func Java_com_xmdhs_gokms_GoKmsNative_runClient(env *C.JNIEnv, _ C.jobject, ipVa
 	var output bytes.Buffer
 	if err := client.RunWithWriter(config, &output); err != nil {
 		throwJava(env, err)
-		return nil
+		return 0
 	}
 	return newJavaString(env, output.String())
 }
