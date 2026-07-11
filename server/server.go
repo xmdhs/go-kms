@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -38,6 +39,14 @@ func NewKMSServer(config *kms.ServerConfig) *KMSServer {
 }
 
 func (s *KMSServer) ListenAndServe() error {
+	if err := s.Listen(); err != nil {
+		return err
+	}
+	return s.Serve()
+}
+
+// Listen opens the configured TCP listener.
+func (s *KMSServer) Listen() error {
 	addr := fmt.Sprintf("%s:%d", s.Config.IP, s.Config.Port)
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -46,10 +55,22 @@ func (s *KMSServer) ListenAndServe() error {
 	s.listener = listener
 	logger.LogAttrs(context.Background(), slog.LevelInfo, "KMS Server listening", slog.String("address", addr))
 	logger.LogAttrs(context.Background(), slog.LevelInfo, "HWID", slog.String("hwid", hex.EncodeToString(s.Config.HWID)))
+	return nil
+}
+
+// Serve accepts connections from an already-open listener.
+func (s *KMSServer) Serve() error {
+	listener := s.listener
+	if listener == nil {
+		return fmt.Errorf("server is not listening")
+	}
 
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
+			if errors.Is(err, net.ErrClosed) {
+				return nil
+			}
 			logger.LogAttrs(context.Background(), slog.LevelWarn, "Failed to accept connection", slog.Any("error", err))
 			continue
 		}
@@ -157,4 +178,3 @@ func (s *KMSServer) handleConnection(conn net.Conn) {
 
 	logger.LogAttrs(ctx, slog.LevelInfo, "Connection closed", slog.String("remote_addr", remoteAddr))
 }
-

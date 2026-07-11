@@ -22,11 +22,6 @@ android {
         }
     }
 
-    packaging {
-        jniLibs {
-            useLegacyPackaging = true
-        }
-    }
 
     buildTypes {
         release {

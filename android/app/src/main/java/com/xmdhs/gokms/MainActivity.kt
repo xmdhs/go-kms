@@ -67,7 +67,6 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
@@ -407,18 +406,6 @@ private fun ClientPanel(
     var cmid by remember { mutableStateOf(initialArgs.cmid) }
     var machine by remember { mutableStateOf(initialArgs.name) }
     var running by remember { mutableStateOf(false) }
-    val clientProcess = remember { mutableStateOf<Process?>(null) }
-
-    // 当 ClientPanel 离开组合时，自动清理客户端进程，防止僵尸进程
-    DisposableEffect(Unit) {
-        onDispose {
-            clientProcess.value?.let { proc ->
-                if (GoKmsProcessRunner.isAlive(proc)) {
-                    GoKmsProcessRunner.stop(proc, LogBuffer::appendClient)
-                }
-            }
-        }
-    }
 
     fun currentArgs(): ClientArgs {
         return ClientArgs(
@@ -495,30 +482,24 @@ private fun ClientPanel(
 
                 running = true
                 scope.launch {
-                    val process = withContext(Dispatchers.IO) {
+                    val output = withContext(Dispatchers.IO) {
                         try {
-                            GoKmsProcessRunner.start(context, args.toCommandLine(), LogBuffer::appendClient)
+                            GoKmsNative.runClient(
+                                args.ip.trim(),
+                                args.port.trim().toInt(),
+                                args.mode,
+                                args.cmid.trim(),
+                                args.name.trim(),
+                            )
                         } catch (t: Throwable) {
                             LogBuffer.appendClient("运行 go-kms client 失败：${t.message}")
                             null
                         }
                     }
-                    if (process == null) {
-                        running = false
-                        return@launch
-                    }
-                    clientProcess.value = process
-                    val exit = withContext(Dispatchers.IO) {
-                        try {
-                            GoKmsProcessRunner.readOutput(process, LogBuffer::appendClient)
-                            process.waitFor()
-                        } catch (t: Throwable) {
-                            LogBuffer.appendClient("读取客户端输出失败：${t.message}")
-                            -1
-                        }
-                    }
-                    clientProcess.value = null
-                    LogBuffer.appendClient("go-kms client 已退出，exit code=$exit")
+                    output
+                        ?.lineSequence()
+                        ?.filter { it.isNotBlank() }
+                        ?.forEach(LogBuffer::appendClient)
                     running = false
                 }
             },

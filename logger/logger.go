@@ -2,6 +2,7 @@ package logger
 
 import (
 	"context"
+	"io"
 	"log/slog"
 	"os"
 	"sync"
@@ -19,6 +20,11 @@ var (
 
 // Init initializes the global logger with the given level.
 func Init(level string) {
+	InitWriter(level, os.Stdout)
+}
+
+// InitWriter initializes the global logger with the given level and output.
+func InitWriter(level string, output io.Writer) {
 	once.Do(func() {
 		var logLevel slog.Level
 		switch level {
@@ -38,7 +44,7 @@ func Init(level string) {
 			Level: logLevel,
 		}
 
-		handler := slog.NewTextHandler(os.Stdout, opts)
+		handler := slog.NewTextHandler(output, opts)
 		logger = slog.New(&warpSlogHandle{handler})
 	})
 }
