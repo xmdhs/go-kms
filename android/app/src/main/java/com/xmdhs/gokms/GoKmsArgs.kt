@@ -29,21 +29,6 @@ data class ServerArgs(
         return null
     }
 
-    fun toCommandLine(): List<String> = buildList {
-        add("server")
-        add("-ip")
-        add(ip.trim())
-        add("-port")
-        add(port.trim())
-        if (epid.isNotBlank()) {
-            add("-epid")
-            add(epid.trim())
-        }
-        add("-count")
-        add(count.trim())
-        add("-hwid")
-        add(hwid.trim())
-    }
 
     fun displayAddress(): String = "${ip.trim()}:${port.trim()}"
 }
@@ -62,23 +47,6 @@ data class ClientArgs(
         return null
     }
 
-    fun toCommandLine(): List<String> = buildList {
-        add("client")
-        add("-ip")
-        add(ip.trim())
-        add("-port")
-        add(port.trim())
-        add("-mode")
-        add(mode)
-        if (cmid.isNotBlank()) {
-            add("-cmid")
-            add(cmid.trim())
-        }
-        if (name.isNotBlank()) {
-            add("-name")
-            add(name.trim())
-        }
-    }
 }
 
 private fun validatePort(value: String): String? {

@@ -16,11 +16,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class GoKmsForegroundService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private var process: Process? = null
+    private var serverHandle: Long? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -44,11 +45,9 @@ class GoKmsForegroundService : Service() {
     }
 
     private fun startServer(args: ServerArgs) {
-        process?.let { existing ->
-            if (GoKmsProcessRunner.isAlive(existing)) {
-                LogBuffer.appendServer("go-kms server 已在运行：${args.displayAddress()}")
-                return
-            }
+        if (serverHandle != null) {
+            LogBuffer.appendServer("go-kms server 已在运行：${args.displayAddress()}")
+            return
         }
 
         val address = args.displayAddress()
@@ -56,25 +55,23 @@ class GoKmsForegroundService : Service() {
         startForegroundCompat(address)
 
         try {
-            val started = GoKmsProcessRunner.start(applicationContext, args.toCommandLine(), LogBuffer::appendServer)
-            process = started
+            val handle = GoKmsNative.startServer(
+                args.ip.trim(),
+                args.port.trim().toInt(),
+                args.epid.trim(),
+                args.count.trim().toInt(),
+                args.hwid.trim(),
+            )
+            serverHandle = handle
             GoKmsServiceState.setRunning(true, address)
-            LogBuffer.appendServer("已启动 go-kms server：$address")
+            LogBuffer.appendServer("已在应用进程内启动 go-kms server：$address")
 
             serviceScope.launch {
-                try {
-                    GoKmsProcessRunner.readOutput(started, LogBuffer::appendServer)
-                    val exit = started.waitFor()
-                    LogBuffer.appendServer("go-kms server 已退出，exit code=$exit")
-                } catch (t: Throwable) {
-                    LogBuffer.appendServer("读取 go-kms server 输出失败：${t.message}")
-                } finally {
-                    if (process === started) {
-                        process = null
-                        GoKmsServiceState.setRunning(false)
-                        stopSelf()
-                    }
+                while (serverHandle == handle) {
+                    appendNativeLogs()
+                    delay(200)
                 }
+                appendNativeLogs()
             }
         } catch (t: Throwable) {
             LogBuffer.appendServer("启动 go-kms server 失败：${t.message}")
@@ -84,11 +81,24 @@ class GoKmsForegroundService : Service() {
     }
 
     private fun stopServer() {
-        val running = process ?: return
-        process = null
-        GoKmsProcessRunner.stop(running, LogBuffer::appendServer)
-        GoKmsServiceState.setRunning(false)
-        LogBuffer.appendServer("已停止 go-kms server")
+        val handle = serverHandle ?: return
+        serverHandle = null
+        try {
+            GoKmsNative.stopServer(handle)
+            appendNativeLogs()
+            LogBuffer.appendServer("已停止 go-kms server")
+        } catch (t: Throwable) {
+            LogBuffer.appendServer("停止 go-kms server 失败：${t.message}")
+        } finally {
+            GoKmsServiceState.setRunning(false)
+        }
+    }
+
+    private fun appendNativeLogs() {
+        GoKmsNative.drainServerLogs()
+            .lineSequence()
+            .filter { it.isNotBlank() }
+            .forEach(LogBuffer::appendServer)
     }
 
     private fun startForegroundCompat(address: String) {

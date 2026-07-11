@@ -5,8 +5,10 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"math/rand"
 	"net"
+	"os"
 	"strings"
 	"time"
 
@@ -84,6 +86,11 @@ var Products = map[string]ProductInfo{
 
 // Run executes the KMS client.
 func Run(config *ClientConfig) error {
+	return RunWithWriter(config, os.Stdout)
+}
+
+// RunWithWriter executes the KMS client and writes human-readable output to output.
+func RunWithWriter(config *ClientConfig, output io.Writer) error {
 	product, ok := Products[config.Mode]
 	if !ok {
 		return fmt.Errorf("unknown product mode: %s", config.Mode)
@@ -101,13 +108,13 @@ func Run(config *ClientConfig) error {
 		machine = randomMachineName()
 	}
 
-	fmt.Printf("Connecting to KMS server: %s:%d\n", config.IP, config.Port)
+	fmt.Fprintf(output, "Connecting to KMS server: %s:%d\n", config.IP, config.Port)
 	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", config.IP, config.Port), 10*time.Second)
 	if err != nil {
 		return fmt.Errorf("connection failed: %w", err)
 	}
 	defer conn.Close()
-	fmt.Println("Connection successful")
+	fmt.Fprintln(output, "Connection successful")
 
 	// Send RPC BIND.
 	bindRequest := rpc.BuildBindRequest(1)
@@ -128,7 +135,7 @@ func Run(config *ClientConfig) error {
 	if bindAckHeader.Type != rpc.PacketTypeBindAck {
 		return fmt.Errorf("expected bind ack, got type 0x%02x", bindAckHeader.Type)
 	}
-	fmt.Println("RPC bind acknowledged")
+	fmt.Fprintln(output, "RPC bind acknowledged")
 
 	// Build KMS request.
 	kmsRequestData, err := buildKMSRequest(product, cmid, machine)
@@ -177,11 +184,11 @@ func Run(config *ClientConfig) error {
 	// Parse the version-specific response.
 	switch product.ProtoMajor {
 	case 4:
-		return parseV4Response(pduData)
+		return parseV4ResponseTo(pduData, output)
 	case 5:
-		return parseV5Response(pduData)
+		return parseV5ResponseTo(pduData, output)
 	case 6:
-		return parseV6Response(pduData)
+		return parseV6ResponseTo(pduData, output)
 	}
 
 	return nil
@@ -191,7 +198,10 @@ func buildKMSRequest(product ProductInfo, cmid, machine string) ([]byte, error) 
 	skuID := kms.MustUUID(product.SkuID)
 	appID := kms.MustUUID(product.AppID)
 	kmsCountID := kms.MustUUID(product.KmsCountID)
-	clientMachineID := kms.MustUUID(cmid)
+	clientMachineID, err := kms.UUIDFromString(cmid)
+	if err != nil {
+		return nil, fmt.Errorf("invalid CMID: %w", err)
+	}
 
 	// Pad to fill 128 bytes total (machineName + null + padding, matching py-kms 'u' format + mnPad).
 	paddedMachine := make([]byte, 128)
@@ -281,6 +291,10 @@ func buildV5V6ClientRequest(kmsData []byte, versionMinor, versionMajor uint16, i
 }
 
 func parseV4Response(data []byte) error {
+	return parseV4ResponseTo(data, os.Stdout)
+}
+
+func parseV4ResponseTo(data []byte, output io.Writer) error {
 	if len(data) < 12 {
 		return fmt.Errorf("V4 response too short")
 	}
@@ -297,19 +311,27 @@ func parseV4Response(data []byte) error {
 		return fmt.Errorf("failed to parse KMS response: %w", err)
 	}
 
-	printResponse(resp)
+	printResponse(output, resp)
 	return nil
 }
 
 func parseV5Response(data []byte) error {
-	return parseV5V6Response(data, false)
+	return parseV5ResponseTo(data, os.Stdout)
+}
+
+func parseV5ResponseTo(data []byte, output io.Writer) error {
+	return parseV5V6Response(data, false, output)
 }
 
 func parseV6Response(data []byte) error {
-	return parseV5V6Response(data, true)
+	return parseV6ResponseTo(data, os.Stdout)
 }
 
-func parseV5V6Response(data []byte, isV6 bool) error {
+func parseV6ResponseTo(data []byte, output io.Writer) error {
+	return parseV5V6Response(data, true, output)
+}
+
+func parseV5V6Response(data []byte, isV6 bool, output io.Writer) error {
 	if len(data) < 16 {
 		return fmt.Errorf("V5/V6 response too short")
 	}
@@ -347,7 +369,7 @@ func parseV5V6Response(data []byte, isV6 bool) error {
 		return fmt.Errorf("failed to parse KMS response: %w", err)
 	}
 
-	printResponse(resp)
+	printResponse(output, resp)
 
 	// Wire format response size: VersionMinor(2) + VersionMajor(2) + EPIDLen(4) + Epid(EPIDLen) + ClientMachineID(16) + ResponseTime(8) + CurrentClientCount(4) + VLActivationInterval(4) + VLRenewalInterval(4)
 	respLen := 44 + int(resp.EPIDLen)
@@ -357,22 +379,22 @@ func parseV5V6Response(data []byte, isV6 bool) error {
 		hwidOffset := respLen + 16 + 32 // keys(16) + hash(32)
 		if len(decrypted) >= hwidOffset+8 {
 			hwid := decrypted[hwidOffset : hwidOffset+8]
-			fmt.Printf("HWID: %s\n", hex.EncodeToString(hwid))
+			fmt.Fprintf(output, "HWID: %s\n", hex.EncodeToString(hwid))
 		}
 	}
 
 	return nil
 }
 
-func printResponse(resp *kms.KMSResponse) {
+func printResponse(output io.Writer, resp *kms.KMSResponse) {
 	epid := kms.DecodeUTF16LE(resp.KMSEpid)
-	fmt.Println("=== KMS Response ===")
-	fmt.Println("  ePID: " + epid)
-	fmt.Println("  Client Machine ID: " + resp.ClientMachineID.String())
-	fmt.Println("  Response Time: " + kms.FileTimeToTime(int64(resp.ResponseTime)).String())
-	fmt.Println("  Current Client Count: " + fmt.Sprintf("%d", resp.CurrentClientCount))
-	fmt.Println("  VL Activation Interval: " + fmt.Sprintf("%d minutes", resp.VLActivationInterval))
-	fmt.Println("  VL Renewal Interval: " + fmt.Sprintf("%d minutes", resp.VLRenewalInterval))
+	fmt.Fprintln(output, "=== KMS Response ===")
+	fmt.Fprintln(output, "  ePID: "+epid)
+	fmt.Fprintln(output, "  Client Machine ID: "+resp.ClientMachineID.String())
+	fmt.Fprintln(output, "  Response Time: "+kms.FileTimeToTime(int64(resp.ResponseTime)).String())
+	fmt.Fprintf(output, "  Current Client Count: %d\n", resp.CurrentClientCount)
+	fmt.Fprintf(output, "  VL Activation Interval: %d minutes\n", resp.VLActivationInterval)
+	fmt.Fprintf(output, "  VL Renewal Interval: %d minutes\n", resp.VLRenewalInterval)
 }
 
 func randomMachineName() string {
