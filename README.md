@@ -18,6 +18,9 @@ go-kms server -ip 0.0.0.0 -port 1688
 go-kms client -ip 127.0.0.1 -port 1688
 ```
 
+### Android
+https://github.com/xmdhs/go-kms/releases
+
 ## Options
 
 ### Server Options
