@@ -100,6 +100,9 @@ func UUIDFromString(s string) (UUID, error) {
 		if hi == 255 || lo == 255 {
 			return UUID{}, fmt.Errorf("invalid hex character in UUID")
 		}
+		if j >= 16 {
+			return UUID{}, fmt.Errorf("invalid UUID string")
+		}
 		b[j] = hi<<4 | lo
 		j++
 		i += 2

@@ -5,7 +5,7 @@ package crypto
 import "sync"
 
 var (
-	aesAsmEnabled = sync.OnceValue(platformAESAsmAvailable)
+	aesAsmEnabled  = sync.OnceValue(platformAESAsmAvailable)
 	v4AsmRoundKeys = sync.OnceValue(func() *asmRoundKeys {
 		return buildAsmRoundKeys(expandKey(V4Key, 20, 192), 11, false)
 	})
@@ -15,6 +15,13 @@ var (
 )
 
 func init() {
+	setupAESAsm()
+}
+
+// setupAESAsm wires up the asm AES implementations when hardware support is
+// available. It is split from init so tests can toggle aesAsmEnabled and
+// exercise both the enabled and disabled paths.
+func setupAESAsm() {
 	if !aesAsmEnabled() {
 		return
 	}

@@ -26,27 +26,29 @@ func Init(level string) {
 // InitWriter initializes the global logger with the given level and output.
 func InitWriter(level string, output io.Writer) {
 	once.Do(func() {
-		var logLevel slog.Level
-		switch level {
-		case "DEBUG":
-			logLevel = slog.LevelDebug
-		case "INFO":
-			logLevel = slog.LevelInfo
-		case "WARN":
-			logLevel = slog.LevelWarn
-		case "ERROR":
-			logLevel = slog.LevelError
-		default:
-			logLevel = slog.LevelInfo
-		}
-
 		opts := &slog.HandlerOptions{
-			Level: logLevel,
+			Level: parseLevel(level),
 		}
 
 		handler := slog.NewTextHandler(output, opts)
 		logger = slog.New(&warpSlogHandle{handler})
 	})
+}
+
+// parseLevel maps a level string to an slog.Level. The default is LevelInfo.
+func parseLevel(level string) slog.Level {
+	switch level {
+	case "DEBUG":
+		return slog.LevelDebug
+	case "INFO":
+		return slog.LevelInfo
+	case "WARN":
+		return slog.LevelWarn
+	case "ERROR":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
 }
 
 // GetLogger returns the global logger.
