@@ -1,3 +1,11 @@
 <resources>
     <color name="notification_icon_color">#3F51B5</color>
+
+    <color name="log_line_background">#0D000000</color>
+    <color name="log_default">#1C1B1F</color>
+    <color name="log_error">#B3261E</color>
+    <color name="log_warn">#E65100</color>
+    <color name="log_success">#2E7D32</color>
+    <color name="log_stopped">#1565C0</color>
+    <color name="log_debug">#558B2F</color>
 </resources>

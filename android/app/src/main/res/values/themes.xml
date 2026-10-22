@@ -1,8 +1,7 @@
 <resources>
-    <style name="Theme.GoKms" parent="android:style/Theme.Material.Light.NoActionBar">
+    <style name="Theme.GoKms" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="android:windowActionBar">false</item>
         <item name="android:windowNoTitle">true</item>
-        <item name="android:windowLightStatusBar">true</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
