@@ -20,7 +20,7 @@ class LogPanelView @JvmOverloads constructor(
     defStyleAttr: Int = 0,
 ) : LinearLayout(context, attrs, defStyleAttr) {
 
-    private val binding = ViewLogPanelBinding.inflate(LayoutInflater.from(context), this, true)
+    private val binding: ViewLogPanelBinding
     private val adapter = LogAdapter()
     private var autoScrollToBottom = true
 
@@ -28,6 +28,7 @@ class LogPanelView @JvmOverloads constructor(
 
     init {
         orientation = VERTICAL
+        binding = ViewLogPanelBinding.inflate(LayoutInflater.from(context), this)
         binding.logList.layoutManager = LinearLayoutManager(context)
         binding.logList.adapter = adapter
         binding.logList.addOnScrollListener(object : RecyclerView.OnScrollListener() {
