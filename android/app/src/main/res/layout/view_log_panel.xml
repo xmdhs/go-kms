@@ -38,29 +38,37 @@
 
     <com.google.android.material.card.MaterialCardView
         android:layout_width="match_parent"
-        android:layout_height="350dp"
+        android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
         app:cardCornerRadius="12dp"
         app:cardElevation="1dp">
 
         <FrameLayout
             android:layout_width="match_parent"
-            android:layout_height="match_parent">
+            android:layout_height="wrap_content">
 
+            <!--
+                固定高度是必需的：列表要有明确的可滚动范围，NestedScrollView 才不会
+                在滑动开始时抢走手势而把列表卡死；高度不设上限时列表会无限撑高，
+                也就没有可滚动区间。
+                不能设 nestedScrollingEnabled="false"：那样 RecyclerView 既不启动
+                嵌套滚动、也不把滑动交给外层，日志就完全无法滚动。
+            -->
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/logList"
                 android:layout_width="match_parent"
-                android:layout_height="match_parent"
+                android:layout_height="350dp"
                 android:padding="12dp"
                 android:clipToPadding="false"
-                android:nestedScrollingEnabled="false"
+                android:overScrollMode="ifContentScrolls"
                 tools:listitem="@layout/item_log" />
 
             <LinearLayout
                 android:id="@+id/emptyLogState"
                 android:layout_width="match_parent"
-                android:layout_height="match_parent"
+                android:layout_height="wrap_content"
                 android:gravity="center"
+                android:minHeight="120dp"
                 android:orientation="vertical"
                 android:padding="24dp"
                 android:visibility="gone">

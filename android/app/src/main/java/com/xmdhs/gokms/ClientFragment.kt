@@ -87,11 +87,11 @@ class ClientFragment : Fragment() {
 
     private fun runClient() {
         val args = clientArgs()
-        args.validate()?.let {
+        args.validate(requireContext())?.let {
             LogBuffer.appendClient(getString(R.string.invalid_args, it))
             return
         }
         settings.saveClient(args)
-        ClientRunner.run(args)
+        ClientRunner.run(requireContext(), args)
     }
 }

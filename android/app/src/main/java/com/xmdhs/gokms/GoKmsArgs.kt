@@ -1,5 +1,7 @@
 package com.xmdhs.gokms
 
+import android.content.Context
+
 private val hwidRegex = Regex("(?i)^(RANDOM|0x[0-9a-f]{16}|[0-9a-f]{16})$")
 
 val ProductModes = listOf(
@@ -21,14 +23,19 @@ data class ServerArgs(
     val count: String = "0",
     val hwid: String = "364F463A8863D35F",
 ) {
-    fun validate(): String? {
-        if (ip.isBlank()) return "监听 IP 不能为空"
-        validatePort(port)?.let { return it }
-        validateNonNegativeInt(count, "客户端数量")?.let { return it }
-        if (!hwidRegex.matches(hwid.trim())) return "HWID 必须是 RANDOM 或 16 位十六进制字符串"
+    /** 返回本地化的错误描述，参数合法时返回 null。 */
+    fun validate(context: Context): String? {
+        if (ip.isBlank()) return context.getString(R.string.error_server_ip_blank)
+        validatePort(context, port)?.let { return it }
+        validateNonNegativeInt(
+            context,
+            count,
+            R.string.error_count_not_number,
+            R.string.error_count_negative,
+        )?.let { return it }
+        if (!hwidRegex.matches(hwid.trim())) return context.getString(R.string.error_hwid_invalid)
         return null
     }
-
 
     fun displayAddress(): String = "${ip.trim()}:${port.trim()}"
 }
@@ -40,21 +47,28 @@ data class ClientArgs(
     val cmid: String = "",
     val name: String = "",
 ) {
-    fun validate(): String? {
-        if (ip.isBlank()) return "服务器 IP 不能为空"
-        validatePort(port)?.let { return it }
-        if (mode !in ProductModes) return "未知产品模式：$mode"
+    /** 返回本地化的错误描述，参数合法时返回 null。 */
+    fun validate(context: Context): String? {
+        if (ip.isBlank()) return context.getString(R.string.error_client_ip_blank)
+        validatePort(context, port)?.let { return it }
+        if (mode !in ProductModes) {
+            return context.getString(R.string.error_unknown_mode, mode)
+        }
         return null
     }
-
 }
 
-private fun validatePort(value: String): String? {
-    val port = value.trim().toIntOrNull() ?: return "端口必须是数字"
-    return if (port in 1..65535) null else "端口范围必须是 1..65535"
+private fun validatePort(context: Context, value: String): String? {
+    val port = value.trim().toIntOrNull() ?: return context.getString(R.string.error_port_not_number)
+    return if (port in 1..65535) null else context.getString(R.string.error_port_range)
 }
 
-private fun validateNonNegativeInt(value: String, label: String): String? {
-    val number = value.trim().toIntOrNull() ?: return "$label 必须是数字"
-    return if (number >= 0) null else "$label 不能为负数"
+private fun validateNonNegativeInt(
+    context: Context,
+    value: String,
+    notNumberRes: Int,
+    negativeRes: Int,
+): String? {
+    val number = value.trim().toIntOrNull() ?: return context.getString(notNumberRes)
+    return if (number >= 0) null else context.getString(negativeRes)
 }

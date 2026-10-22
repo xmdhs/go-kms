@@ -2,49 +2,72 @@
     <string name="app_name">go-kms</string>
     <string name="notification_channel_name">go-kms server</string>
 
-    <string name="tab_server">服务端</string>
-    <string name="tab_client">客户端</string>
+    <string name="tab_server">Server</string>
+    <string name="tab_client">Client</string>
 
-    <string name="server_title">服务端</string>
-    <string name="client_title">客户端</string>
-    <string name="server_status_running">状态：运行中 %1$s</string>
-    <string name="server_status_stopped">状态：已停止</string>
+    <string name="server_title">Server</string>
+    <string name="client_title">Client</string>
+    <string name="server_status_running">Status: running %1$s</string>
+    <string name="server_status_stopped">Status: stopped</string>
 
-    <string name="listen_address_title">监听地址</string>
-    <string name="bind_address">绑定参数：%1$s</string>
-    <string name="device_addresses_label">设备当前可访问地址：</string>
-    <string name="device_addresses_empty">当前未获取到非回环设备 IP</string>
-    <string name="refresh_ip">刷新 IP</string>
+    <string name="listen_address_title">Listening address</string>
+    <string name="bind_address">Bind parameters: %1$s</string>
+    <string name="device_addresses_label">Addresses reachable from devices:</string>
+    <string name="device_addresses_empty">No non-loopback device IP found</string>
+    <string name="refresh_ip">Refresh IP</string>
 
-    <string name="server_config_title">服务配置</string>
-    <string name="client_config_title">客户端配置</string>
+    <string name="server_config_title">Server configuration</string>
+    <string name="client_config_title">Client configuration</string>
 
-    <string name="label_listen_ip">监听 IP</string>
-    <string name="label_port">端口</string>
-    <string name="label_epid">ePID（可空）</string>
-    <string name="label_client_count">客户端数量</string>
+    <string name="label_listen_ip">Listen IP</string>
+    <string name="label_port">Port</string>
+    <string name="label_epid">ePID (optional)</string>
+    <string name="label_client_count">Client count</string>
     <string name="label_hwid">HWID</string>
-    <string name="label_server_ip">服务器 IP</string>
-    <string name="label_mode">产品模式</string>
-    <string name="label_cmid">CMID（可空）</string>
-    <string name="label_machine_name">机器名（可空）</string>
+    <string name="label_server_ip">Server IP</string>
+    <string name="label_mode">Product mode</string>
+    <string name="label_cmid">CMID (optional)</string>
+    <string name="label_machine_name">Machine name (optional)</string>
 
-    <string name="hwid_random">使用 RANDOM</string>
-    <string name="hwid_default">默认 HWID</string>
+    <string name="hwid_random">Use RANDOM</string>
+    <string name="hwid_default">Default HWID</string>
 
-    <string name="start_server">启动服务</string>
-    <string name="stop_server">停止服务</string>
-    <string name="run_client">运行客户端</string>
-    <string name="client_running">运行中</string>
+    <string name="start_server">Start server</string>
+    <string name="stop_server">Stop server</string>
+    <string name="run_client">Run client</string>
+    <string name="client_running">Running</string>
 
-    <string name="log_title">日志</string>
-    <string name="log_count">%1$d 条</string>
-    <string name="log_clear">清空</string>
-    <string name="log_empty">暂无日志</string>
+    <string name="log_title">Logs</string>
+    <plurals name="log_count">
+        <item quantity="one">%1$d line</item>
+        <item quantity="other">%1$d lines</item>
+    </plurals>
+    <string name="log_clear">Clear</string>
+    <string name="log_copied">Copied to clipboard</string>
+    <string name="log_empty">No logs yet</string>
 
-    <string name="notification_granted">通知权限已授予</string>
-    <string name="notification_denied">通知权限被拒绝：Android 13+ 上前台服务通知可能无法显示</string>
-    <string name="notification_required">请授予通知权限后再次启动服务</string>
-    <string name="invalid_args">参数错误：%1$s</string>
-    <string name="device_addresses_log">设备当前可访问地址：%1$s</string>
+    <string name="notification_granted">Notification permission granted</string>
+    <string name="notification_denied">Notification permission denied: the foreground service notification may not appear on Android 13+</string>
+    <string name="notification_required">Grant the notification permission, then start the server again</string>
+    <string name="notification_running_title">go-kms server is running</string>
+    <string name="notification_stop_action">Stop</string>
+    <string name="invalid_args">Invalid arguments: %1$s</string>
+    <string name="device_addresses_log">Addresses reachable from devices: %1$s</string>
+
+    <string name="error_server_ip_blank">Listen IP must not be empty</string>
+    <string name="error_client_ip_blank">Server IP must not be empty</string>
+    <string name="error_port_not_number">Port must be a number</string>
+    <string name="error_port_range">Port must be in the range 1..65535</string>
+    <string name="error_count_not_number">Client count must be a number</string>
+    <string name="error_count_negative">Client count must not be negative</string>
+    <string name="error_hwid_invalid">HWID must be RANDOM or a 16-digit hexadecimal string</string>
+    <string name="error_unknown_mode">Unknown product mode: %1$s</string>
+
+    <string name="log_client_run_failed">Failed to run go-kms client: %1$s</string>
+    <string name="log_unknown_service_action">Unknown service action: %1$s</string>
+    <string name="log_server_already_running">go-kms server is already running: %1$s</string>
+    <string name="log_server_started">Started go-kms server in the app process: %1$s</string>
+    <string name="log_server_start_failed">Failed to start go-kms server: %1$s</string>
+    <string name="log_server_stopped">Stopped go-kms server</string>
+    <string name="log_server_stop_failed">Failed to stop go-kms server: %1$s</string>
 </resources>

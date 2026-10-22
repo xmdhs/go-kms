@@ -1,0 +1,72 @@
+<resources>
+    <string name="app_name">go-kms</string>
+    <string name="notification_channel_name">go-kms server</string>
+
+    <string name="tab_server">服务端</string>
+    <string name="tab_client">客户端</string>
+
+    <string name="server_title">服务端</string>
+    <string name="client_title">客户端</string>
+    <string name="server_status_running">状态：运行中 %1$s</string>
+    <string name="server_status_stopped">状态：已停止</string>
+
+    <string name="listen_address_title">监听地址</string>
+    <string name="bind_address">绑定参数：%1$s</string>
+    <string name="device_addresses_label">设备当前可访问地址：</string>
+    <string name="device_addresses_empty">当前未获取到非回环设备 IP</string>
+    <string name="refresh_ip">刷新 IP</string>
+
+    <string name="server_config_title">服务配置</string>
+    <string name="client_config_title">客户端配置</string>
+
+    <string name="label_listen_ip">监听 IP</string>
+    <string name="label_port">端口</string>
+    <string name="label_epid">ePID（可空）</string>
+    <string name="label_client_count">客户端数量</string>
+    <string name="label_hwid">HWID</string>
+    <string name="label_server_ip">服务器 IP</string>
+    <string name="label_mode">产品模式</string>
+    <string name="label_cmid">CMID（可空）</string>
+    <string name="label_machine_name">机器名（可空）</string>
+
+    <string name="hwid_random">使用 RANDOM</string>
+    <string name="hwid_default">默认 HWID</string>
+
+    <string name="start_server">启动服务</string>
+    <string name="stop_server">停止服务</string>
+    <string name="run_client">运行客户端</string>
+    <string name="client_running">运行中</string>
+
+    <string name="log_title">日志</string>
+    <plurals name="log_count">
+        <item quantity="other">%1$d 条</item>
+    </plurals>
+    <string name="log_clear">清空</string>
+    <string name="log_copied">已复制到剪贴板</string>
+    <string name="log_empty">暂无日志</string>
+
+    <string name="notification_granted">通知权限已授予</string>
+    <string name="notification_denied">通知权限被拒绝：Android 13+ 上前台服务通知可能无法显示</string>
+    <string name="notification_required">请授予通知权限后再次启动服务</string>
+    <string name="notification_running_title">go-kms server 正在运行</string>
+    <string name="notification_stop_action">停止</string>
+    <string name="invalid_args">参数错误：%1$s</string>
+    <string name="device_addresses_log">设备当前可访问地址：%1$s</string>
+
+    <string name="error_server_ip_blank">监听 IP 不能为空</string>
+    <string name="error_client_ip_blank">服务器 IP 不能为空</string>
+    <string name="error_port_not_number">端口必须是数字</string>
+    <string name="error_port_range">端口范围必须是 1..65535</string>
+    <string name="error_count_not_number">客户端数量必须是数字</string>
+    <string name="error_count_negative">客户端数量不能为负数</string>
+    <string name="error_hwid_invalid">HWID 必须是 RANDOM 或 16 位十六进制字符串</string>
+    <string name="error_unknown_mode">未知产品模式：%1$s</string>
+
+    <string name="log_client_run_failed">运行 go-kms client 失败：%1$s</string>
+    <string name="log_unknown_service_action">未知服务命令：%1$s</string>
+    <string name="log_server_already_running">go-kms server 已在运行：%1$s</string>
+    <string name="log_server_started">已在应用进程内启动 go-kms server：%1$s</string>
+    <string name="log_server_start_failed">启动 go-kms server 失败：%1$s</string>
+    <string name="log_server_stopped">已停止 go-kms server</string>
+    <string name="log_server_stop_failed">停止 go-kms server 失败：%1$s</string>
+</resources>

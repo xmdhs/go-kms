@@ -1,7 +1,6 @@
 <resources>
     <color name="notification_icon_color">#3F51B5</color>
 
-    <color name="log_line_background">#0D000000</color>
     <color name="log_default">#1C1B1F</color>
     <color name="log_error">#B3261E</color>
     <color name="log_warn">#E65100</color>

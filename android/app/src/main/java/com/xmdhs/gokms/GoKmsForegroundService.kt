@@ -33,7 +33,9 @@ class GoKmsForegroundService : Service() {
                 return START_NOT_STICKY
             }
             ACTION_START -> startServer(GoKmsForegroundService.serverArgsFromIntent(intent))
-            else -> LogBuffer.appendServer("未知服务命令：${intent?.action}")
+            else -> LogBuffer.appendServer(
+                getString(R.string.log_unknown_service_action, intent?.action.orEmpty()),
+            )
         }
         return START_STICKY
     }
@@ -46,7 +48,9 @@ class GoKmsForegroundService : Service() {
 
     private fun startServer(args: ServerArgs) {
         if (serverHandle != null) {
-            LogBuffer.appendServer("go-kms server 已在运行：${args.displayAddress()}")
+            LogBuffer.appendServer(
+                getString(R.string.log_server_already_running, args.displayAddress()),
+            )
             return
         }
 
@@ -64,7 +68,7 @@ class GoKmsForegroundService : Service() {
             )
             serverHandle = handle
             GoKmsServiceState.setRunning(true, address)
-            LogBuffer.appendServer("已在应用进程内启动 go-kms server：$address")
+            LogBuffer.appendServer(getString(R.string.log_server_started, address))
 
             serviceScope.launch {
                 while (serverHandle == handle) {
@@ -74,7 +78,9 @@ class GoKmsForegroundService : Service() {
                 appendNativeLogs()
             }
         } catch (t: Throwable) {
-            LogBuffer.appendServer("启动 go-kms server 失败：${t.message}")
+            LogBuffer.appendServer(
+                getString(R.string.log_server_start_failed, t.message.orEmpty()),
+            )
             GoKmsServiceState.setRunning(false)
             stopSelf()
         }
@@ -86,9 +92,11 @@ class GoKmsForegroundService : Service() {
         try {
             GoKmsNative.stopServer(handle)
             appendNativeLogs()
-            LogBuffer.appendServer("已停止 go-kms server")
+            LogBuffer.appendServer(getString(R.string.log_server_stopped))
         } catch (t: Throwable) {
-            LogBuffer.appendServer("停止 go-kms server 失败：${t.message}")
+            LogBuffer.appendServer(
+                getString(R.string.log_server_stop_failed, t.message.orEmpty()),
+            )
         } finally {
             GoKmsServiceState.setRunning(false)
         }
@@ -134,11 +142,15 @@ class GoKmsForegroundService : Service() {
         return NotificationCompat.Builder(this, ChannelId)
             .setSmallIcon(R.drawable.ic_notification)
             .setColor(ContextCompat.getColor(this, R.color.notification_icon_color))
-            .setContentTitle("go-kms server 正在运行")
+            .setContentTitle(getString(R.string.notification_running_title))
             .setContentText(address)
             .setContentIntent(openPendingIntent)
             .setOngoing(true)
-            .addAction(R.drawable.ic_notification, "停止", stopPendingIntent)
+            .addAction(
+                R.drawable.ic_notification,
+                getString(R.string.notification_stop_action),
+                stopPendingIntent,
+            )
             .build()
     }
 

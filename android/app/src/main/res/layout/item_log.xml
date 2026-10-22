@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    日志行不能设置 textIsSelectable：可选中文本会自行消费拖动事件用于选区，
+    RecyclerView 就收不到滑动，列表无法滚动。改为长按复制整行。
+-->
 <TextView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/logText"
@@ -13,6 +17,5 @@
     android:paddingEnd="8dp"
     android:paddingBottom="4dp"
     android:textAppearance="?attr/textAppearanceBodySmall"
-    android:textColor="@color/log_default"
-    android:textIsSelectable="true"
+    android:textColor="?attr/colorOnSurface"
     tools:text="已在应用进程内启动 go-kms server：0.0.0.0:1688" />

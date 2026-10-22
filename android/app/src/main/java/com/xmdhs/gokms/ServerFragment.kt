@@ -175,7 +175,7 @@ class ServerFragment : Fragment() {
 
     private fun startServer() {
         val args = serverArgs()
-        args.validate()?.let {
+        args.validate(requireContext())?.let {
             LogBuffer.appendServer(getString(R.string.invalid_args, it))
             return
         }

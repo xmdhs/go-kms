@@ -1,5 +1,6 @@
 package com.xmdhs.gokms
 
+import android.content.Context
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -19,9 +20,10 @@ object ClientRunner {
     private val _running = MutableStateFlow(false)
     val running: StateFlow<Boolean> = _running.asStateFlow()
 
-    fun run(args: ClientArgs) {
+    fun run(context: Context, args: ClientArgs) {
         if (_running.value) return
         val port = args.port.trim().toIntOrNull() ?: return
+        val appContext = context.applicationContext
 
         _running.value = true
         scope.launch {
@@ -35,9 +37,13 @@ object ClientRunner {
                         args.name.trim(),
                     )
                 } catch (t: Throwable) {
-                    LogBuffer.appendClient("运行 go-kms client 失败：${t.message}")
+                    val reason = t.message.orEmpty()
+                    LogBuffer.appendClient(
+                        appContext.getString(R.string.log_client_run_failed, reason),
+                    )
                     null
-                }            }
+                }
+            }
             output
                 ?.lineSequence()
                 ?.filter { it.isNotBlank() }

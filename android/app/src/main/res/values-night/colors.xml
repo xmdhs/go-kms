@@ -1,5 +1,4 @@
 <resources>
-    <color name="log_line_background">#14FFFFFF</color>
     <color name="log_default">#E6E1E5</color>
     <color name="log_error">#F2B8B5</color>
     <color name="log_warn">#FFB74D</color>
